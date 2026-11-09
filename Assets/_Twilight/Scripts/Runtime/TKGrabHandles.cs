@@ -16,6 +16,8 @@ namespace Twilight
         public bool Shown { get; set; }
         /// <summary>正在被双手捏着拖。</summary>
         public bool Held { get; set; }
+        /// <summary>新手教学“摆琴”那一步：两颗钮一下一下地鼓起来招手。</summary>
+        public bool Beckon { get; set; }
         /// <summary>手（捏合点）离第 i 颗钮多近：0 远 … 1 就在上面（会话每帧给）。</summary>
         public void SetHover(int i, float v) => hover[i] = Mathf.MoveTowards(hover[i], v, Time.deltaTime * 6f);
         public bool Visible => show > 0.5f;
@@ -38,12 +40,31 @@ namespace Twilight
                     minZ = Mathf.Min(minZ, l.z); maxZ = Mathf.Max(maxZ, l.z);
                 }
             }
+            // 第三十五轮（用户：位置要靠近桌子边）：钮贴着虚拟桌（= 对齐后的真实桌边）靠人那一侧的边沿，往里 2 cm、高出桌面 1.2 cm
+            float edgeZ = minZ - 0.035f, padY = top + 0.015f;
+            var vt = world.Find("VirtualTable");
+            if (vt)
+            {
+                float vMin = 9f, vTop = -9f;
+                foreach (var vmf in vt.GetComponentsInChildren<MeshFilter>(true))
+                {
+                    if (!vmf.sharedMesh) continue;
+                    var vb = vmf.sharedMesh.bounds;
+                    for (int k = 0; k < 8; k++)
+                    {
+                        var vc = vb.center + Vector3.Scale(vb.extents, new Vector3((k & 1) == 0 ? -1 : 1, (k & 2) == 0 ? -1 : 1, (k & 4) == 0 ? -1 : 1));
+                        var vl = world.InverseTransformPoint(vmf.transform.TransformPoint(vc));
+                        vMin = Mathf.Min(vMin, vl.z); vTop = Mathf.Max(vTop, vl.y);
+                    }
+                }
+                if (vMin < minZ) { edgeZ = vMin + 0.02f; padY = vTop + 0.012f; }
+            }
             var arrows = ArrowMesh();
             for (int i = 0; i < 2; i++)
             {
                 var root = new GameObject(i == 0 ? "GrabKnobL" : "GrabKnobR").transform;
                 root.SetParent(world, false);
-                root.localPosition = new Vector3(i == 0 ? minX - 0.045f : maxX + 0.045f, top + 0.015f, (minZ + maxZ) * 0.5f);
+                root.localPosition = new Vector3(i == 0 ? minX - 0.045f : maxX + 0.045f, padY, edgeZ);
                 root.localRotation = Quaternion.Euler(-35f, 0f, 0f);       // 圆钮正面（本地 +Y）朝上、往玩家那边斜 35°
                 Cyl(root, "Rim", gold, new Vector3(0.042f, 0.0035f, 0.042f), 0f);
                 var pad = new GameObject("Pad").transform; pad.SetParent(root, false);
@@ -103,7 +124,7 @@ namespace Twilight
             {
                 if (!knobs[i]) continue;
                 knobs[i].gameObject.SetActive(show > 0.001f);
-                float hv = Held ? 1f : hover[i];
+                float hv = Held ? 1f : Mathf.Max(hover[i], Beckon ? 0.5f + 0.5f * Mathf.Sin(Time.time * 4.5f) : 0f);
                 knobs[i].localScale = Vector3.one * Mathf.Max(0.001f, e * (1f + 0.18f * hv));
                 if (pads[i]) pads[i].localPosition = new Vector3(0f, Held ? -0.0016f : 0.0008f * hv, 0f);   // 手靠近微微浮起，捏住按下去
             }

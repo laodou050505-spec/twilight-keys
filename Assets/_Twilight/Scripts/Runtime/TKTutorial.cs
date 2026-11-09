@@ -18,6 +18,10 @@ namespace Twilight
         public bool Active { get; private set; }
         /// <summary>还在第一步（提示里说了“暂停 → 齿轮调高度”，暂停钮招手）。</summary>
         public bool AtStart => Active && step == 0;
+        /// <summary>第三十五轮（用户：圆钮要在新手教学里告诉玩家）：第一步“摆琴”——两颗圆钮招手。</summary>
+        public bool AtKnobs => Active && step == 4;
+        /// <summary>会话通知：玩家双手捏住圆钮拖过一次（松手了）。</summary>
+        public void NotifyGrabbed() { if (Active && step == 4) { step = 0; hoverT = 0f; beganAt = Time.time; } }
         public Bi Message { get; private set; } = Bi.None;
 
         int step; float hoverT, doneAt, missUntil, beganAt; Bi missMsg = Bi.None;
@@ -38,7 +42,7 @@ namespace Twilight
 
         public void Begin()
         {
-            Active = true; step = 0; hoverT = 0f; doneAt = -1f; missUntil = -1f; beganAt = Time.time;
+            Active = true; step = 4; hoverT = 0f; doneAt = -1f; missUntil = -1f; beganAt = Time.time;
             for (int i = 0; i < 4; i++) lanes[i] = false;
             if (marks) marks.strength = 1f;
             Debug.Log("[TK] 教程开始");
@@ -53,6 +57,7 @@ namespace Twilight
         void OnTap(int lane)
         {
             if (!Active) return;
+            if (step == 4) return;                                                                 // 还在摆琴：敲桌子不算
             if ((step == 0 && Time.time - beganAt > 2.5f) || step == 3) { step = 1; return; }     // 已经会敲了：直接进第二步（第一步至少看 2.5 秒）
             if (step != 1 || lane < 0 || lane > 3) return;
             lanes[lane] = true;
@@ -63,7 +68,7 @@ namespace Twilight
 
         void OnMiss(NearMiss m)
         {
-            if (!Active || step == 0) return;
+            if (!Active || step == 0 || step == 4) return;
             missMsg = m.reason switch
             {
                 "high" => new Bi("再往下一点——指尖要碰到桌面", "a bit lower — let your fingertip touch the table"),
@@ -80,10 +85,16 @@ namespace Twilight
             if (!Active) return false;
             switch (step)
             {
+                case 4:
+                    // 第三十五轮（用户：两颗圆钮要在新手教学里告诉玩家）：先把琴摆到自己的桌子上；位置本来就合适，把手放到琴键上方就跳过
+                    Message = new Bi("双手各捏住琴两边的圆钮，把琴拖到你的桌面上\n位置合适了，就把双手放到琴键上方", "pinch the two knobs beside the piano and drag it onto your table\nif it already sits right, rest your hands over the keys");
+                    if (FingersOver() >= 2) hoverT += dt; else hoverT = Mathf.Max(0f, hoverT - dt);
+                    if (hoverT > 2.5f) { step = 1; hoverT = 0f; }
+                    break;
                 case 0:
                     // 第二十四轮（用户：教学里没看到“琴太高”的提示）：原来放在单独一步、一敲桌子就跳过了。现在就写在第一步第二行
                     // 第二十七轮（用户：说“齿轮里可以调”时旁边没有暂停键）：教学时暂停钮也亮出来、轻轻招手；提示指向它
-                    Message = new Bi("把双手放到琴键上方\n琴的位置不对？双手捏住两边的圆钮，拖到桌面上", "hold your hands over the keys\npiano in the wrong place? pinch the two side knobs and drag it onto your table");
+                    Message = new Bi("摆好了！把双手放到琴键上方", "nice! now rest your hands over the keys");
                     if (FingersOver() >= 2) hoverT += dt;
                     if (hoverT > 2.5f) step = 1;
                     break;

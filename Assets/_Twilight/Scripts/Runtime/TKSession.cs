@@ -143,7 +143,7 @@ namespace Twilight
                     if (pauseButton)
                     {
                         pauseButton.Shown = !tutorialPaused;
-                        pauseButton.Beckon = tutorial.AtStart;
+                        pauseButton.Beckon = false;                         // 第三十五轮：教学第一步改教圆钮，暂停钮不再招手
                         if (pauseButton.Pressed) { pauseButton.Pressed = false; tutorialPaused = true; }
                     }
                     if (tutorialPaused && box)
@@ -331,7 +331,7 @@ namespace Twilight
             box.SetHint(tut ? SayCoverTut : !TKMusicBox.PanelKnown ? SayCoverPanel : Bi.None, -1f);
         }
         /// <summary>新手练习曲：最短的《两只老虎》，只弹一遍（第二十七轮，用户：有的歌太长，教学用短歌，之后玩家自己选）。</summary>
-        const string PracticeSong = "tigers";
+        const string PracticeSong = "scarborough";   // 第三十五轮（用户：教学用短的、不是童谣的曲子）：斯卡布罗集市，30 秒、35 块、难度 1
 
         void BeginSong(bool practice = false)
         {
@@ -516,8 +516,8 @@ namespace Twilight
         void PianoGrab(float dt, HandJoints L, HandJoints R)
         {
             var game = director.Game;
-            bool allowed = placed && world.gameObject.activeInHierarchy && state != State.Intro && state != State.Place
-                && !(state == State.Play && game != null && game.State != GameState.Paused);   // 教学里也能拖（第一步就提示了）
+            // 第三十五轮（用户：圆钮要一直留在场景里）：琴摆出来以后圆钮一直在，弹奏中也能拖（要双手各捏住一颗，不会误触）
+            bool allowed = placed && world.gameObject.activeInHierarchy && state != State.Place;
             Vector3 pa = default, pb = default;
             for (int h = 0; h < 2; h++)
             {
@@ -534,7 +534,7 @@ namespace Twilight
             // 抓手圆钮：能调的时候出现；手（拇指食指中点）靠近哪颗，哪颗放大
             if (grabHandles)
             {
-                grabHandles.Shown = allowed; grabHandles.Held = grabbing;
+                grabHandles.Shown = allowed; grabHandles.Held = grabbing; grabHandles.Beckon = tutorial && tutorial.AtKnobs;
                 for (int k = 0; k < 2; k++)
                 {
                     float dmin = 9f;
@@ -554,6 +554,7 @@ namespace Twilight
                     var hit = st + f * director.tiles.hitS;
                     LockTable(hit - f * TableEdgeInset, f, world.position.y + authoredTableY + 0.007f, true, "双手捏住摆放");
                     AutoPlace();
+                    if (tutorial) tutorial.NotifyGrabbed();
                     if (box) box.AlignHint = Bi.None;
                     return;
                 }
