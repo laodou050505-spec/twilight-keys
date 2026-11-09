@@ -52,7 +52,7 @@ namespace Twilight
         /// <summary>正在拨小岛（这时别把手势当成摆琴、敲琴）。</summary>
         public bool Handling => spinBy >= 0;
         /// <summary>第三十一轮（用户：退出时容易碰到别的地方）：手正在按八音盒上的钮 / 曲目卡开着 / 刚按完——这时敲到琴键不算“开始”。</summary>
-        public bool Reaching => Handling || PanelOpen || Time.time < reachUntil;
+        public bool Reaching => Handling || PanelOpen || settings || TableAlignRequested || Time.time < reachUntil;   // 第三十三轮：设置开着、正在对齐桌子时，手按桌面也不算“开始”
         float reachUntil = -1f;
         // 退出改成“按住不放 1 秒”（原来 3 秒内按两次：手指要先退开再戳，常常按不出去）
         const float ExitHoldSeconds = 1.0f;
@@ -100,7 +100,19 @@ namespace Twilight
 
         // 设置
         bool settings; int settingItem;
-        const int SettingCount = 3;   // 语言、新手教学、琴的高度
+        const int SettingCount = 4;   // 语言、新手教学、琴的高度、对齐桌子
+        // ---- 第三十三轮（用户：有自己桌子的玩家想对着桌子弹，琴有时是歪的，要摆正在桌面上）----
+        /// <summary>设置里按了“对齐桌子”的 ▶：会话开始看两手食指尖是否按在桌边上。</summary>
+        public bool TableAlignRequested { get; set; }
+        /// <summary>设置里按了“对齐桌子”的 ◀（已对齐时）：取消对齐，琴回到按身体估的位置。</summary>
+        public bool TableAlignCancel { get; set; }
+        /// <summary>会话告诉八音盒：现在琴是不是对着桌子摆的（铭牌显示“已对齐”）。</summary>
+        public bool TableAligned { get; set; }
+        /// <summary>对齐过程中的提示（优先于其他提示）和进度（0..1，−1 不显示）。</summary>
+        [System.NonSerialized] public Bi AlignHint = Bi.None;
+        [System.NonSerialized] public float AlignProgress = -1f;
+        /// <summary>对齐状态变了：设置停在这一项时，铭牌翻成新文字。</summary>
+        public void RefreshSetting() { if (settings && settingItem == 3) Flip(SettingBi()); }
         // 换歌 / 翻牌
         float flipT = 1f; Bi pending;
         float hopT = 1f;
@@ -206,7 +218,7 @@ namespace Twilight
         public void Hide()
         {
             if (phase == Phase.Hidden || phase == Phase.Closing) return;
-            phase = Phase.Closing; t = 0f; spinBy = -1; settings = false; PanelOpen = false;
+            phase = Phase.Closing; t = 0f; spinBy = -1; settings = false; PanelOpen = false; TableAlignRequested = false;
             flies.Scatter(1.2f); bar.Scatter(0.8f);
         }
 
@@ -223,6 +235,10 @@ namespace Twilight
         Bi SettingBi()
         {
             if (settingItem == 0) return new Bi("语言 · 中文", "Language · English");
+            if (settingItem == 3)
+                return TableAlignRequested ? new Bi("对齐桌子 · 对齐中", "Align to table · …")
+                     : TableAligned ? new Bi("对齐桌子 · 已对齐", "Align to table · done")
+                     : new Bi("对齐桌子 · ▶ 开始", "Align to table · ▶");
             if (settingItem == 2)
             {
                 int cm = Mathf.RoundToInt(TKLang.PianoLift * 100f);
@@ -466,7 +482,7 @@ namespace Twilight
             flies.visible = Mathf.Max(rise, phase == Phase.Closing ? 1f - t : 0f); flies.Update(dt);
 
             // 提示 + “手掌放平”进度
-            float prog = exitHold > 0.02f ? exitHold / ExitHoldSeconds : progress;
+            float prog = exitHold > 0.02f ? exitHold / ExitHoldSeconds : !AlignHint.Empty ? AlignProgress : progress;
             int count = prog >= 0f ? Mathf.RoundToInt(Mathf.Clamp01(prog) * BarDots) : 0;
             if (count != barCount && phase != Phase.Closing)
             {
@@ -477,7 +493,9 @@ namespace Twilight
             }
             bar.visible = textA; bar.Update(dt);
             bool exitTip = !ResumeMode && !settings && buttons.Length > 4 && btnHover[4] > 0.5f;
-            var showHint = exitHold > 0.02f ? SayExitHold : exitTip ? SayExitHow : settings ? new Bi("两边的小钮修改 · 齿轮换下一项", "side buttons change  ·  gear: next item") : Time.time < nudgeUntil ? SayLocked : hint;
+            var showHint = exitHold > 0.02f ? SayExitHold : !AlignHint.Empty ? AlignHint : exitTip ? SayExitHow
+                : settings && settingItem == 3 ? (TableAligned ? new Bi("▶ 重新对齐 · ◀ 取消对齐 · 齿轮换下一项", "▶ align again  ·  ◀ undo  ·  gear: next") : new Bi("按 ▶，再把两手食指按在桌子靠你的边上\n也可以双手捏住琴直接拖", "press ▶, then rest both index fingers on the table's near edge\nor pinch the piano with both hands and drag it"))
+                : settings ? new Bi("两边的小钮修改 · 齿轮换下一项", "side buttons change  ·  gear: next item") : Time.time < nudgeUntil ? SayLocked : hint;
             hintLine.Set(showHint);
             string cur = TKLang.En ? showHint.en : showHint.zh;
             if (cur != hintSized) { hintSized = cur; SizeHintPlate(); }
@@ -588,14 +606,14 @@ namespace Twilight
                     break;
                 case 2:
                     PanelOpen = false;
-                    if (settings) { settings = false; Flip(SongBi()); }
+                    if (settings) { settings = false; TableAlignRequested = false; Flip(SongBi()); }
                     else if (startEnabled) StartPressed = true;
                     else Kick();
                     break;
                 case 3:
                     PanelOpen = false;
                     if (!settings) { settings = true; settingItem = 0; }
-                    else if (++settingItem >= SettingCount) { settings = false; Flip(SongBi()); break; }
+                    else if (++settingItem >= SettingCount) { settings = false; TableAlignRequested = false; Flip(SongBi()); break; }
                     Flip(SettingBi());
                     break;
                 case 4:
@@ -610,6 +628,13 @@ namespace Twilight
         {
             if (settingItem == 0) TKLang.En = !TKLang.En;
             else if (settingItem == 2) { TKLang.PianoLift += d * 0.02f; PianoLiftChanged = true; }   // ◀ 低 2 cm、▶ 高 2 cm，琴马上跟着动
+            else if (settingItem == 3)
+            {
+                // ▶ 开始对齐（两手食指按桌边）；◀ 对齐中 = 不对了，已对齐 = 取消对齐
+                if (d > 0) { TableAlignRequested = true; TableAlignCancel = false; }
+                else if (TableAlignRequested) TableAlignRequested = false;
+                else if (TableAligned) TableAlignCancel = true;
+            }
             else TKLang.Tutorial = !TKLang.Tutorial;
             // 语言一换，铭牌直接换成新语言的同一项
             Flip(SettingBi());

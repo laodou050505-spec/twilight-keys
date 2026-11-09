@@ -110,6 +110,9 @@ namespace Twilight
 
             // 第三十二轮（用户：琴不能和弹出来的八音盒叠在一起）：琴摆出来以后，八音盒盒底至少比琴键顶面高 7 cm（琴键顶面 ≈ 指尖接触高度 + 4 cm）
             if (box) box.minBottomY = placed && world.gameObject.activeInHierarchy && hands ? hands.contactY + 0.04f + boxClearance : float.NegativeInfinity;
+            // 第三十三轮：对齐桌子（设置里两指按桌边）、双手捏住琴拖动
+            if (box && box.Visible) TableAlign(dt, L, R);
+            PianoGrab(dt, L, R);
 
             switch (state)
             {
@@ -121,7 +124,7 @@ namespace Twilight
                     CoverHint();
                     TrackTable(L, R);
                     FollowPosture();
-                    if ((box && box.StartPressed) || (placed && Time.time - menuAt > 1.2f && director.TapCount != lastTaps && !(box && box.Reaching)))   // 第三十一轮：手在按八音盒的钮时敲到琴键不算开始
+                    if ((box && box.StartPressed) || (placed && Time.time - menuAt > 1.2f && director.TapCount != lastTaps && !(box && box.Reaching) && !grabbing && Time.time > grabBusyUntil))   // 第三十一轮：手在按八音盒的钮时敲到琴键不算开始
                     {
                         // 第二十二轮：按八音盒“开始”一定按现在的姿势重新摆琴（弹完一首换成坐着 / 站着都跟得上）；敲琴开始说明手已经在琴上，不动
                         bool fromBox = box && box.StartPressed;
@@ -157,7 +160,7 @@ namespace Twilight
                 case State.Play:
                     if (game == null) break;
                     // 掌心朝上：暂停 / 继续
-                    if (!(box && box.Handling) && (upL.Update(dt, L) || upR.Update(dt, R)))     // 拨小岛时掌心可能朝上，不算
+                    if (!(box && box.Handling) && !grabbing && (upL.Update(dt, L) || upR.Update(dt, R)))     // 拨小岛时掌心可能朝上，不算
                     {
                         if (game.State == GameState.Paused) game.Resume(); else game.Pause();
                     }
@@ -228,7 +231,7 @@ namespace Twilight
                         CoverHint();
                         FollowPosture();
                         if (Time.time - boxAt > 1f && box.StartPressed) AutoPlace();      // 按八音盒“开始”接下一首：按现在的姿势重新摆琴
-                        if (Time.time - boxAt > 1f && (box.StartPressed || (director.TapCount != lastTaps && !box.Reaching))) { songIndex = box.songIndex; box.StartPressed = false; box.Hide(); BeginSong(); }
+                        if (Time.time - boxAt > 1f && (box.StartPressed || (director.TapCount != lastTaps && !box.Reaching && !grabbing && Time.time > grabBusyUntil))) { songIndex = box.songIndex; box.StartPressed = false; box.Hide(); BeginSong(); }
                         break;
                     }
                     bool early = since > 0.6f && director.TapCount != lastTaps;
@@ -237,7 +240,7 @@ namespace Twilight
                     bool ready = !hud || hud.ResultDone;
                     if (box && ready && boxAt < 0f) boxAt = Time.time + 4f;
                     if (hud) hud.prompt = r == null || !ready ? Bi.None : win ? SayNext : SayAgain;
-                    if (ready && director.TapCount != lastTaps) { if (win && !lastPractice) songIndex = (songIndex + 1) % playlist.Length; BeginSong(); }
+                    if (ready && director.TapCount != lastTaps && !grabbing && Time.time > grabBusyUntil) { if (win && !lastPractice) songIndex = (songIndex + 1) % playlist.Length; BeginSong(); }
                     break;
             }
             lastTaps = director.TapCount;
@@ -411,7 +414,13 @@ namespace Twilight
             if (!placed || !head || Application.isEditor) return;
             if (box && box.PianoLiftChanged) { box.PianoLiftChanged = false; AutoPlace(); return; }
             if (float.IsNaN(placedEye)) return;
-            if (Mathf.Abs(head.position.y - placedEye) > 0.25f) AutoPlace();
+            if (Mathf.Abs(head.position.y - placedEye) > 0.25f)
+            {
+                // 第三十三轮：手动对齐 / 双手摆好的琴不跟着姿势跑；系统扫描自动对齐的，站起坐下后重新判断要不要用那张桌子
+                if (tableLocked && tableManual) { placedEye = head.position.y; return; }
+                if (tableLocked) UnlockTable();
+                AutoPlace();
+            }
         }
         float placedEye = float.NaN;
         [Tooltip("八音盒盒底比琴键顶面至少高多少")] public float boxClearance = 0.07f;
@@ -428,36 +437,58 @@ namespace Twilight
             placed = true;
             if (head) placedEye = head.position.y;
             if (!head) return;
-            // 第十九轮（用户：桌子要摆正在玩家眼前）：琴永远正对着玩家的视线、左右居中，不再跟桌边转、不往手的方向偏。
-            // 真桌子（系统房间扫描）只用来定高度和远近：沿视线方向碰到桌子靠人的那条边，琴前沿放在边内 5 cm。
+            // 第十九轮（用户：桌子要摆正在玩家眼前）：没有桌子可对时，琴正对着玩家的视线、左右居中。
+            // 第三十三轮（用户：有自己桌子的玩家想对着桌子弹，琴有时是歪的）：有桌子时一律以桌边为准摆正——
+            // 朝向垂直于桌边、高度 = 桌面、判定线在桌边往里 11.9 cm（琴前沿在桌边内 5 cm）。桌子来自“设置 → 对齐桌子”（两指按桌边）或系统房间扫描。
             var fwd = head.forward; fwd.y = 0;
             if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
             fwd.Normalize();
-            var rot = Quaternion.LookRotation(fwd, Vector3.up);
-            float depth = 0.38f; int n = 0;
-            // 第二十一轮（用户：坐着时琴在膝盖上、站着又偏高）：不再看手的高度——真机日志里“手放在身前”抓到的是去按八音盒的手（站着时琴到了 1.33 m），
-            // 坐着时手搭在膝盖上又被当成桌面。高度只按身体比例：坐着琴键在眼下 46 cm（≈ 坐姿手肘），站着在眼高的 64%（≈ 手肘略低）。
             float floorY = head.parent ? head.parent.position.y : 0f;
             float eyeH = head.position.y - floorY;
             bool floorKnown = eyeH > 0.9f && eyeH < 2.2f;                  // 追踪原点不是地面时（eyeH 很小）不按姿势估
             bool standing = floorKnown && eyeH > 1.38f;
-            // 第二十二轮（用户：坐着还是在膝盖上）：坐姿抬高、推远——眼下 40 cm、前方 42 cm（书桌前弹琴时手的位置）；再加上设置里的高度微调
             float lift = TKLang.PianoLift;
-            float contactY = (standing ? floorY + eyeH * 0.64f : head.position.y - 0.40f) + lift;
-            string heightHow = (standing ? "按站姿（眼高 × 0.64）" : "按坐姿（眼下 40 cm）") + (Mathf.Abs(lift) > 0.001f ? $"，微调 {lift * 100f:+0;-0} cm" : "");
-            if (!standing) depth = 0.42f;
-            float tableTop = contactY - 0.007f;
-            string how = $"默认远近 {depth * 100f:F0} cm";
             var eye = new Vector3(head.position.x, 0, head.position.z);
-            // 真桌子只有在高度合适时才用（比舒适高度低 15 cm 到高 12 cm 之内）：站在一张普通书桌前，书桌太低就不用，虚拟桌子放到舒适高度
-            if (room && room.Nearest(head.position, fwd, out var tb) && tb.center.y > contactY - 0.15f && tb.center.y < contactY + 0.12f && EnterTable(tb, eye, fwd, out float tIn))
+            // 系统扫描的桌子：视线碰到的那张、高度合理（坐着：眼下 15~75 cm；站着：眼高 × 0.64 附近 −15~+12 cm）→ 自动对齐到它朝着人的那条边
+            if (!tableLocked && room && room.Nearest(head.position, fwd, out var tb) && EnterTable(tb, eye, fwd, out float tIn))
             {
-                depth = Mathf.Clamp(tIn + 0.05f + 0.069f, 0.28f, 0.6f);
-                contactY = tb.center.y; tableTop = contactY - 0.007f; heightHow = "系统扫描的桌面";
-                how = $"系统扫描的桌子（{tb.halfA * 2f:F2}×{tb.halfB * 2f:F2} m，视线碰到桌边 {tIn * 100f:F0} cm）";
+                float below = head.position.y - tb.center.y, comfy = floorY + eyeH * 0.64f;
+                bool fits = standing ? tb.center.y > comfy - 0.15f && tb.center.y < comfy + 0.12f : below > 0.15f && below < 0.75f;
+                if (fits)
+                {
+                    // 桌面两根轴里和视线最接近的那根 = 琴的朝向；视线进桌的点投到近边上 = 琴的左右位置
+                    Vector3 tf = tb.axisA; float half = tb.halfA, bestDot = -2f;
+                    foreach (var (ax, h) in new[] { (tb.axisA, tb.halfA), (-tb.axisA, tb.halfA), (tb.axisB, tb.halfB), (-tb.axisB, tb.halfB) })
+                        if (Vector3.Dot(ax, fwd) > bestDot) { bestDot = Vector3.Dot(ax, fwd); tf = ax; half = h; }
+                    var c = new Vector3(tb.center.x, 0, tb.center.z);
+                    var entry = eye + fwd * tIn;
+                    var edgePt = entry - tf * (Vector3.Dot(entry - c, tf) + half);
+                    LockTable(edgePt, tf, tb.center.y + 0.007f, false, $"系统扫描的桌子（{tb.halfA * 2f:F2}×{tb.halfB * 2f:F2} m，桌边离人 {Vector3.Dot(edgePt - eye, tf) * 100f:F0} cm）");
+                }
             }
-            var hitAt = eye + fwd * depth;
-            var stageTarget = hitAt - fwd * director.tiles.hitS;
+            Quaternion rot; Vector3 hitAt; float contactY; string heightHow, how;
+            if (tableLocked)
+            {
+                rot = Quaternion.LookRotation(tableFwd, Vector3.up);
+                hitAt = tableEdgeMid + tableFwd * TableEdgeInset;
+                float fine = lift - liftAtLock;                                   // 对齐之后再在设置里调高度：在桌面基础上微调
+                contactY = tableY + fine;
+                heightHow = "桌面" + (Mathf.Abs(fine) > 0.001f ? $"，微调 {fine * 100f:+0;-0} cm" : "");
+                how = tableHow;
+            }
+            else
+            {
+                // 第二十一 / 二十二轮：高度只按身体比例——坐着琴键在眼下 40 cm、前方 42 cm；站着在眼高的 64%；再加上设置里的高度微调
+                float depth = standing ? 0.38f : 0.42f;
+                contactY = (standing ? floorY + eyeH * 0.64f : head.position.y - 0.40f) + lift;
+                heightHow = (standing ? "按站姿（眼高 × 0.64）" : "按坐姿（眼下 40 cm）") + (Mathf.Abs(lift) > 0.001f ? $"，微调 {lift * 100f:+0;-0} cm" : "");
+                rot = Quaternion.LookRotation(fwd, Vector3.up);
+                hitAt = eye + fwd * depth;
+                how = $"跟着视线，判定线离人 {depth * 100f:F0} cm";
+            }
+            float tableTop = contactY - 0.007f;
+            var f2 = rot * Vector3.forward;
+            var stageTarget = new Vector3(hitAt.x, 0, hitAt.z) - f2 * director.tiles.hitS;
             world.rotation = rot;
             var p = stageTarget - rot * new Vector3(stageLocal.x, 0, stageLocal.z);
             world.position = new Vector3(p.x, tableTop - authoredTableY, p.z);
@@ -467,7 +498,151 @@ namespace Twilight
             hands.contactY = contactY;
             hands.Detector.Reset();
             if (director.river) director.river.Rebuild();
-            PlaceLog($"[TK] 自动摆琴：桌面 {tableTop:F3}（{heightHow}，眼睛离地 {eyeH:F2} m）、朝向 {rot.eulerAngles.y:F0}°，判定线离人 {depth * 100f:F0} cm（{how}；{(room ? room.Status : "没有房间识别组件")}）");
+            PlaceLog($"[TK] 自动摆琴：桌面 {tableTop:F3}（{heightHow}，眼睛离地 {eyeH:F2} m）、朝向 {rot.eulerAngles.y:F0}°（{how}）；{ScanSummary(fwd)}");
+        }
+
+        // ---------- 第三十三轮（用户：玩家可以用两只手捏住桌子来调）：双手捏住琴拖动 ----------
+        bool grabbing; readonly bool[] grabPinch = new bool[2]; readonly float[] grabPinchAt = { -9f, -9f };
+        Vector3 grabA0, grabB0, grabPos0; float grabYaw0, grabBusyUntil = -1f;
+        static readonly Bi SayGrab = new("双手捏着拖：一起挪 = 移动，错开 = 转向，抬 / 压 = 调高度\n摆好松手", "drag with both hands: move, twist to turn, raise or lower\nlet go when it sits right");
+        static float Yaw(Vector3 a, Vector3 b) { var d = b - a; return Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg; }
+
+        /// <summary>琴摆出来以后（弹奏中除外），两只手同时在琴附近捏住（拇指碰食指）：琴跟着两手走——
+        /// 两手中点平移、两手连线转了多少琴就转多少（只绕竖直轴）、两手一起抬高压低就调高度。松手后按新位置“对齐”下来（和设置里对齐桌子同一套）。</summary>
+        void PianoGrab(float dt, HandJoints L, HandJoints R)
+        {
+            var game = director.Game;
+            bool allowed = placed && world.gameObject.activeInHierarchy && state != State.Intro && state != State.Place
+                && !(state == State.Play && game != null && game.State != GameState.Paused);   // 教学里也能拖（第一步就提示了）
+            Vector3 pa = default, pb = default;
+            for (int h = 0; h < 2; h++)
+            {
+                var j = h == 0 ? L : R;
+                if (j == null) { grabPinch[h] = false; continue; }
+                float d = Vector3.Distance(j.thumbTip, j.indexTip);
+                bool was = grabPinch[h];
+                grabPinch[h] = was ? d < 0.032f : d < 0.018f;
+                if (grabPinch[h] && !was) grabPinchAt[h] = Time.time;
+                var pp = (j.thumbTip + j.indexTip) * 0.5f;
+                if (h == 0) pa = pp; else pb = pp;
+            }
+            bool both = grabPinch[0] && grabPinch[1];
+            if (grabbing)
+            {
+                if (!both || !allowed)
+                {
+                    // 松手：按现在的位置记成“对齐的桌子”，之后每次摆琴都在这里
+                    grabbing = false; grabBusyUntil = Time.time + 0.8f;
+                    var rot0 = Quaternion.Euler(0f, world.eulerAngles.y, 0f); var f = rot0 * Vector3.forward;
+                    var st = world.position + rot0 * new Vector3(stageLocal.x, 0f, stageLocal.z); st.y = 0f;
+                    var hit = st + f * director.tiles.hitS;
+                    LockTable(hit - f * TableEdgeInset, f, world.position.y + authoredTableY + 0.007f, true, "双手捏住摆放");
+                    AutoPlace();
+                    if (box) box.AlignHint = Bi.None;
+                    return;
+                }
+                float dyaw = Mathf.DeltaAngle(Yaw(grabA0, grabB0), Yaw(pa, pb));
+                var q = Quaternion.Euler(0f, dyaw, 0f);
+                var mid0 = (grabA0 + grabB0) * 0.5f; var mid = (pa + pb) * 0.5f;
+                var off = grabPos0 - mid0; off.y = 0f;
+                var np = new Vector3(mid.x, 0f, mid.z) + q * off;
+                world.position = new Vector3(np.x, grabPos0.y + (mid.y - mid0.y), np.z);
+                world.rotation = Quaternion.Euler(0f, grabYaw0 + dyaw, 0f);
+                grabBusyUntil = Time.time + 0.8f;
+                if (box && box.Visible) { box.AlignHint = SayGrab; box.AlignProgress = -1f; }
+                return;
+            }
+            if (!allowed || !both) return;
+            // 开始：两手都是刚捏上（0.5 秒内）、都在琴附近（水平 35 cm、上下 20 cm 内）、两手分开 10 cm 以上
+            if (Time.time - grabPinchAt[0] > 0.5f || Time.time - grabPinchAt[1] > 0.5f) return;
+            var kc = director.keys ? director.keys.transform.position : world.position;
+            bool Near(Vector3 p) { var d = p - kc; d.y = 0f; return d.magnitude < 0.35f && Mathf.Abs(p.y - hands.contactY) < 0.2f; }
+            var sep = pb - pa; sep.y = 0f;
+            if (!Near(pa) || !Near(pb) || sep.magnitude < 0.1f) return;
+            grabbing = true; grabA0 = pa; grabB0 = pb; grabPos0 = world.position; grabYaw0 = world.eulerAngles.y;
+            if (box && box.TableAlignRequested) box.TableAlignRequested = false;
+            Debug.Log("[TK] 双手捏住琴，开始拖动");
+        }
+
+        // ---------- 第三十三轮：对齐桌子 ----------
+        bool tableLocked, tableManual;
+        Vector3 tableEdgeMid, tableFwd;
+        float tableY, liftAtLock;
+        string tableHow = "";
+        [Tooltip("判定线在桌边往里多少（琴前沿在桌边内约 5 cm）")] public float TableEdgeInset = 0.119f;
+        /// <summary>记下一张桌子（近边上一点、朝向、指尖贴桌面时的高度）：之后每次摆琴都按它摆正。</summary>
+        void LockTable(Vector3 edgePt, Vector3 tf, float contact, bool manual, string how)
+        {
+            tableLocked = true; tableManual = manual;
+            tableEdgeMid = new Vector3(edgePt.x, 0, edgePt.z); tf.y = 0; tableFwd = tf.normalized;
+            tableY = contact; liftAtLock = TKLang.PianoLift; tableHow = how;
+            if (box) { box.TableAligned = true; box.RefreshSetting(); }
+        }
+        void UnlockTable()
+        {
+            tableLocked = tableManual = false;
+            if (box) { box.TableAligned = false; box.RefreshSetting(); }
+        }
+
+        static readonly Bi SayAlign = new("两手食指尖按在桌子靠你的边上\n左右分开一点，按住别动", "rest both index fingertips on the near edge of your table\nhands apart, hold still");
+        static readonly Bi SayAligned = new("对齐好了：琴摆正在桌面上", "aligned: the piano sits square on your table");
+        float alignHold, alignAt = -1f, alignedMsgUntil = -1f;
+        Vector3 alignL, alignR;
+
+        /// <summary>设置里按了“对齐桌子”：等两手食指尖都按在同一高度、左右分开 12~120 cm、1 秒内没挪动超过 1.5 cm
+        /// → 两指连线 = 桌边，琴的朝向垂直于它、高度 = 指尖高度，马上重新摆琴。30 秒没对上就算了。</summary>
+        void TableAlign(float dt, HandJoints L, HandJoints R)
+        {
+            if (box.TableAlignCancel) { box.TableAlignCancel = false; UnlockTable(); if (placed) AutoPlace(); }
+            if (!box.TableAlignRequested)
+            {
+                alignHold = 0f; alignAt = -1f;
+                box.AlignHint = Time.time < alignedMsgUntil ? SayAligned : Bi.None; box.AlignProgress = -1f;
+                return;
+            }
+            if (alignAt < 0f) alignAt = Time.time;
+            if (Time.time - alignAt > 30f) { box.TableAlignRequested = false; box.RefreshSetting(); return; }
+            bool ok = false; Vector3 a = default, b = default;
+            if (L != null && R != null && head)
+            {
+                a = L.indexTip; b = R.indexTip;
+                var e = b - a; e.y = 0;
+                ok = head.position.y - a.y > 0.2f && head.position.y - b.y > 0.2f && Mathf.Abs(a.y - b.y) < 0.03f && e.magnitude > 0.12f && e.magnitude < 1.2f;
+            }
+            if (!ok) alignHold = 0f;
+            else if (alignHold <= 0f || (a - alignL).magnitude > 0.015f || (b - alignR).magnitude > 0.015f) { alignL = a; alignR = b; alignHold = 0.0001f; }
+            else alignHold += dt;
+            box.AlignHint = SayAlign; box.AlignProgress = alignHold;
+            if (alignHold >= 1f)
+            {
+                var mid = (a + b) * 0.5f;
+                var e = b - a; e.y = 0;
+                var tf = Vector3.Cross(e, Vector3.up).normalized;           // 垂直于桌边、水平
+                var away = mid - head.position; away.y = 0;
+                if (Vector3.Dot(tf, away) < 0f) tf = -tf;                         // 朝着离开人的方向
+                LockTable(mid, tf, (a.y + b.y) * 0.5f, true, $"手动对齐桌边（两指相距 {e.magnitude * 100f:F0} cm）");
+                box.TableAlignRequested = false; box.RefreshSetting();
+                alignHold = 0f; alignedMsgUntil = Time.time + 2.5f;
+                AutoPlace();
+                if (director.beatTrack) director.beatTrack.Chime(0.35f);
+            }
+        }
+
+        /// <summary>系统扫描到的桌子（离人最近的 4 张）：距离、方位、桌面离眼多低、尺寸——写进摆琴日志，方便查“为什么没用上”。</summary>
+        string ScanSummary(Vector3 fwd)
+        {
+            if (!room) return "没有房间识别组件";
+            if (!room.Found) return room.Status;
+            var l = new System.Collections.Generic.List<TKRoomTable.Table>(room.tables);
+            var hp = new Vector3(head.position.x, 0, head.position.z);
+            l.Sort((x, y) => (new Vector3(x.center.x, 0, x.center.z) - hp).sqrMagnitude.CompareTo((new Vector3(y.center.x, 0, y.center.z) - hp).sqrMagnitude));
+            var sb = new System.Text.StringBuilder(room.Status + "：");
+            for (int i = 0; i < Mathf.Min(4, l.Count); i++)
+            {
+                var d = new Vector3(l[i].center.x, 0, l[i].center.z) - hp;
+                sb.Append($" [{d.magnitude:F2} m，{Vector3.SignedAngle(fwd, d, Vector3.up):F0}°，眼下 {(head.position.y - l[i].center.y) * 100f:F0} cm，{l[i].halfA * 2f:F2}×{l[i].halfB * 2f:F2}]");
+            }
+            return sb.ToString();
         }
 
         /// <summary>从 eye 沿 fwd（水平）看过去，第一次碰到桌面矩形的距离（射线和矩形求交，slab 法）。</summary>
