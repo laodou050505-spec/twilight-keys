@@ -35,7 +35,7 @@ namespace Twilight
         public float lidOpen = 105f;
         // 第三十四轮（用户：盖子打开后还有缝，看着廉价）：拱盖绕盒沿后面一点翻开，下沿弧线两边翘起，和盒沿之间空出两块月牙缝。
         // 参考图里盖子是“从盒子里立起来”的——开盖后半段再让盖子往下沉、往后退一点，下沿落到盒沿后面，缝被盒沿挡住；合上时原样扣回。
-        [Tooltip("开盖到底时合页额外移动（Body 本地：y 向下沉、z 向后退）；第三十五轮起用褶皱缎面补缝，默认不沉")] public Vector3 lidSinkOpen = Vector3.zero;
+        [Tooltip("开盖到底时合页额外移动（Body 本地：y 向下沉、z 向后退）；默认不沉")] public Vector3 lidSinkOpen = Vector3.zero;
         [Tooltip("小岛（Body 空间）：收起 / 升起的高度、前后位置、大小；立柱顶在升起高度下面")]
         public float islandLow = 0.03f, islandHigh = 0.118f, islandZ = 0.012f, islandScale = 0.6f;   // 第十三轮（参考图）：小岛压低一点，盖内的村庄画露在它上方
         [Header("声音")]
@@ -134,7 +134,7 @@ namespace Twilight
             buttons = new[] { btnPrev, btnNext, btnStart, btnSettings, btnExit };
             btnHalf = new[] { new Vector2(0.0085f, 0.0085f), new Vector2(0.0085f, 0.0085f), new Vector2(0.02f, 0.0083f), new Vector2(0.0085f, 0.0085f), new Vector2(0.02f, 0.0083f) };
             for (int i = 0; i < buttons.Length; i++) if (buttons[i]) btnRest[i] = buttons[i].localPosition;
-            if (lidPivot) { lidClosed = lidPivot.localRotation; lidRestPos = lidPivot.localPosition; BuildGusset(); }
+            if (lidPivot) { lidClosed = lidPivot.localRotation; lidRestPos = lidPivot.localPosition; }
             if (drum) drumBase = drum.localRotation;
             if (teeth != null) { toothBase = new Quaternion[teeth.Length]; toothShake = new float[teeth.Length]; for (int i = 0; i < teeth.Length; i++) toothBase[i] = teeth[i].localRotation; }
             if (spinHint) { hintMat = new Material(spinHint.sharedMaterial); spinHint.sharedMaterial = hintMat; }
@@ -415,7 +415,6 @@ namespace Twilight
                 lidPivot.localRotation = Quaternion.AngleAxis(lidOpen * lid, Vector3.right) * lidClosed;
                 float sink = Ease((lid - 0.55f) / 0.45f);                   // 先转起来，转过一大半再沉下去（避免盖沿蹭到盒沿）
                 lidPivot.localPosition = lidRestPos + lidSinkOpen * sink;
-                UpdateGusset(lid);
             }
             if (glows != null)
                 for (int g = 0; g < glows.Length; g++)
@@ -712,83 +711,6 @@ namespace Twilight
             if (kb.sKey.wasPressedThisFrame) Press(3);
             if (kb.lKey.wasPressedThisFrame) TogglePanel();
             if (kb.escapeKey.wasPressedThisFrame) Press(4);
-        }
-
-        // ---------- 第三十五轮（用户：开盖过程里盖子和盒沿之间还有缝，看着廉价）：开盖布 ----------
-        // 拱盖绕后沿翻开时，盖子下沿弧线和盒沿之间整个过程都会空出一道缝（逐帧截图确认：55°~105° 都透出后面的墙）。
-        // 高级首饰盒 / 八音盒的做法：盒沿和盖沿之间连一片打褶的缎面，盖子开多大它就展开多大，合上时收进盖沿里。
-        // 两条缝线都是盒沿的超椭圆（A·0.915、B·0.915 往里 6 mm）：一条在盒沿顶面（不动），一条在盖沿底面（跟着盖子转）。
-        const float GusH = 0.088f, GusA = 0.13f * 0.915f - 0.006f, GusB = 0.095f * 0.915f - 0.006f, GusN = 2.4f;
-        const int GusCols = 64, GusRows = 8;
-        [Tooltip("开盖布覆盖后半圈的范围：从侧面往后多少度开始（0 = 从正侧面开始）")] public float gussetFromDeg = 10f;
-        [Tooltip("开盖布往盒子里垂多少（占两条缝线距离的比例）")] public float gussetSag = 0.05f;
-        Mesh gusset; Transform gussetT; Vector3[] gusBody, gusLid, gusVerts;
-
-        void BuildGusset()
-        {
-            var go = new GameObject("LidGusset");
-            gussetT = go.transform; gussetT.SetParent(body, false);
-            gusset = new Mesh { name = "LidGusset" }; gusset.MarkDynamic();
-            go.AddComponent<MeshFilter>().sharedMesh = gusset;
-            var mr = go.AddComponent<MeshRenderer>(); mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr.receiveShadows = false;
-            Material src = null;
-            foreach (var r in body.GetComponentsInChildren<MeshRenderer>(true)) foreach (var m in r.sharedMaterials) if (m && m.name.StartsWith("Box_Velvet")) src = m;
-            if (src) { var mat = new Material(src) { name = "LidGusset 缎面" }; if (mat.HasProperty("_NoAO")) mat.SetFloat("_NoAO", 1f); mr.sharedMaterial = mat; }
-            gusBody = new Vector3[GusCols]; gusLid = new Vector3[GusCols];
-            float t0 = gussetFromDeg * Mathf.Deg2Rad;
-            for (int i = 0; i < GusCols; i++)
-            {
-                float t = Mathf.Lerp(t0, Mathf.PI - t0, i / (float)(GusCols - 1));
-                float c = Mathf.Cos(t), sn = Mathf.Sin(t);
-                float x = GusA * Mathf.Sign(c) * Mathf.Pow(Mathf.Abs(c), 2f / GusN), z = GusB * Mathf.Pow(Mathf.Abs(sn), 2f / GusN);   // z > 0 = 后半圈（合页那边）
-                gusBody[i] = new Vector3(x, GusH - 0.0006f, z);
-                gusLid[i] = new Vector3(x, GusH + 0.004f, z);
-            }
-            int n = GusCols * GusRows;
-            gusVerts = new Vector3[n * 2];
-            var uv = new Vector2[n * 2];
-            var tri = new List<int>();
-            for (int i = 0; i < GusCols; i++)
-                for (int j = 0; j < GusRows; j++)
-                {
-                    int k = i * GusRows + j;
-                    uv[k] = uv[k + n] = new Vector2(i / (float)(GusCols - 1) * 6f, j / (float)(GusRows - 1));
-                    if (i == GusCols - 1 || j == GusRows - 1) continue;
-                    int a = k, b = k + GusRows, c2 = k + GusRows + 1, d = k + 1;
-                    tri.AddRange(new[] { a, b, c2, a, c2, d });                          // 一面
-                    tri.AddRange(new[] { a + n, c2 + n, b + n, a + n, d + n, c2 + n });  // 另一面（顶点各自一份，法线才不会互相抵消）
-                }
-            gusset.vertices = gusVerts; gusset.uv = uv; gusset.SetTriangles(tri, 0);
-            go.SetActive(false);
-        }
-
-        /// <summary>每帧按盖子现在的位置重算开盖布：两条缝线之间铺 8 行，中间往盒子里垂一点（软），再加几道竖褶。</summary>
-        void UpdateGusset(float lidT)
-        {
-            if (!gusset) return;
-            bool on = lidT > 0.002f;
-            if (gussetT.gameObject.activeSelf != on) gussetT.gameObject.SetActive(on);
-            if (!on) return;
-            var P = lidPivot.localPosition;
-            var Q = lidPivot.localRotation * Quaternion.Inverse(lidClosed);
-            int n = GusCols * GusRows;
-            for (int i = 0; i < GusCols; i++)
-            {
-                var b = gusBody[i];
-                var l = P + Q * (gusLid[i] - lidRestPos);
-                float len = Vector3.Distance(b, l);
-                var inward = new Vector3(-b.x, 0f, -b.z).normalized;
-                float pleat = Mathf.Sin(i * 0.95f) * Mathf.Clamp01(len / 0.02f);
-                for (int j = 0; j < GusRows; j++)
-                {
-                    float v = j / (float)(GusRows - 1), bulge = Mathf.Sin(Mathf.PI * v);
-                    var p = Vector3.Lerp(b, l, v) + inward * (bulge * (gussetSag * len + 0.0018f * pleat));
-                    gusVerts[i * GusRows + j] = gusVerts[i * GusRows + j + n] = p;
-                }
-            }
-            gusset.vertices = gusVerts;
-            gusset.RecalculateNormals();
-            gusset.RecalculateBounds();
         }
 
         /// <summary>有惯性的跟随：转头超过 recenterAngle 或离开太远才重新对准，平滑滑过去。</summary>

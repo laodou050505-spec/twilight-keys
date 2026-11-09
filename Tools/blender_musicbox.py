@@ -544,7 +544,10 @@ finish2(base, 0.3)
 LID_Z0, LID_ZW = H + 0.0033, H + 0.016   # 盖沿：竖直的一圈
 DOME_H = 0.024
 CEIL = H + 0.0105   # 盖内顶面（象牙白瓷面贴在它下面）
-lid = se_slab('Lid', A * S_TOP, B * S_TOP, LID_Z0, LID_ZW, 'Ivory')
+# 第三十五轮（用户：盖子上那圈金边和盖子本体之间有缝）：原来是实心板 + 穹顶拼好后再布尔挖内腔，两块网格互相重叠不封闭，
+# 精确布尔把盖沿外侧壁（3.3~16 mm 那一段）整圈挖没了——金边上方透出盖子里面的瓷面、字牌，开盖时透出后面的墙。
+# 改成直接建一个 7 mm 厚的空心盖沿环（外壁 + 内壁 + 上下面，和金边圈同一个函数），内腔自然留出来，不再用布尔。
+lid = se_annulus('Lid', LID_Z0, LID_ZW, A * S_TOP, B * S_TOP, A * S_TOP - 0.007, B * S_TOP - 0.007, 'Ivory')
 dzs = [LID_ZW + DOME_H * math.sin(k / 14 * math.pi / 2) for k in range(15)]
 
 
@@ -555,21 +558,6 @@ def dome_s(z):
 
 dome = se_loft('Dome', dzs, dome_s, mat_of=lambda zc: 'Ivory', cap=True)
 lid = join2([lid, dome], 'Lid')
-boolean(lid, se_slab('lidcav', A * S_TOP - 0.007, B * S_TOP - 0.007, LID_Z0 - 0.01, CEIL, 'Ivory'))
-# 第三十五轮（用户：盖沿那圈金圈和盖子之间有缝）：精确布尔挖出来的盖内腔侧壁法线全朝外（背对空腔），
-# 开盖后从下面 / 正面看过去全是背面、被剔除，透出后面的墙。把内腔侧壁（离外沿 7 mm 那一圈、盖沿到盖内顶面之间）一律翻成朝向空腔。
-_bm = bmesh.new(); _bm.from_mesh(lid.data)
-_flip = []
-for _f in _bm.faces:
-    _c = _f.calc_center_median()
-    if not (LID_Z0 - 0.002 < _c.z < CEIL + 0.001):
-        continue
-    _q = (abs(_c.x) / (A * S_TOP - 0.007)) ** NSE + (abs(_c.y) / (B * S_TOP - 0.007)) ** NSE
-    if 0.9 < _q < 1.1 and abs(_f.normal.z) < 0.5 and _f.normal.dot(Vector((-_c.x, -_c.y, 0.0))) < 0:
-        _flip.append(_f)
-bmesh.ops.reverse_faces(_bm, faces=_flip)
-_bm.to_mesh(lid.data); _bm.free()
-print('LID CAVITY FLIP', len(_flip))
 lid_rim = se_annulus('LidRim', H + 0.0012, H + 0.0048, A * S_TOP + 0.0006, B * S_TOP + 0.0006, A * S_TOP - 0.0075, B * S_TOP - 0.0075)
 bevel(lid_rim, 0.0006, 2, 50)
 lid_rim = join2([lid_rim, se_tube('LidBead', A * S_TOP + 0.0006, B * S_TOP + 0.0006, H + 0.003, 0.0019)], 'LidRim')
