@@ -3,9 +3,12 @@ using UnityEngine;
 
 namespace Twilight
 {
-    /// <summary>光河：从窗口流到琴键前沿的四条轨道。左右笔直平行（玩法要求），只在竖直方向起伏：
+    /// <summary>光河：从窗口流到琴键前沿的四条轨道。四条轨道始终平行（玩法要求），竖直方向起伏：
     /// 琴键上一段贴着键面压平（判定区）→ 越过琴盖 → 缓缓升到窗洞下部。
     /// 挂在 Stage 上（本地原点 = 琴键前沿中点、桌面高度；+Z 指向窗户）。窗户距离变了调 Rebuild()。
+    /// 第三十六轮（用户：挪桌子时整个场景跟着动很别扭）：琴台和场景拆开后，窗户不一定在琴的正前方——
+    /// 离琴键 bendStart 以内保持笔直（判定区、琴盖坡度都在这一段，手感不变），往后用五次缓动平滑地弯向窗户的左右位置。
+    /// 横向（轨道排开的方向）逐点取“水平切线 × 竖直”，不再写死成本地 X。
     /// 玩法用 Point(s, lane) 取音块位置：s = 离琴键前沿的弧长（米）。</summary>
     [ExecuteAlways]
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
@@ -28,6 +31,8 @@ namespace Twilight
         [Tooltip("光河在窗洞里的起点高度：窗洞底边往上多少")]
         public float sourceAboveSill = 0.14f;
         public int samples = 180;
+        [Tooltip("离琴键多远之后才开始弯向窗户（米）")] public float bendStart = 0.5f;
+        [Tooltip("最多弯多少度（超出就由会话把场景搬到琴的正前方）")] public float maxBendDeg = 35f;
         [Header("黄铜分隔线")]
         public Material brass;
         public float lineWidth = 0.0024f;
@@ -48,6 +53,7 @@ namespace Twilight
         [Range(0, 1), Tooltip("开场“从天上飘下来”：1 = 全藏，0 = 全显（全局 _TK_RiverHide）")] public float hide;
 
         readonly List<Vector3> path = new();   // 本地中心线
+        readonly List<Vector3> sides = new();  // 每个采样点的横向（单位向量，水平）
         readonly List<float> arc = new();
         public float Length { get; private set; }
 
@@ -61,6 +67,25 @@ namespace Twilight
         {
             if (!window) return fallbackDistance;
             return Mathf.Max(0.8f, transform.InverseTransformPoint(window.position).z - 0.02f);
+        }
+
+        /// <summary>窗户在琴台本地的左右偏移（限制在 maxBendDeg 以内）。</summary>
+        float BendX(float D)
+        {
+            if (!window) return 0f;
+            float wx = transform.InverseTransformPoint(window.position).x;
+            float lim = Mathf.Tan(maxBendDeg * Mathf.Deg2Rad) * Mathf.Max(0.1f, D - bendStart);
+            return Mathf.Clamp(wx, -lim, lim);
+        }
+
+        /// <summary>窗户相对琴台是否在光河能弯过去的范围里（会话据此决定要不要把场景搬到琴的正前方）。</summary>
+        public bool WindowReachable(out float angleDeg)
+        {
+            angleDeg = 0f;
+            if (!window) return true;
+            var w = transform.InverseTransformPoint(window.position);
+            angleDeg = Mathf.Atan2(w.x, Mathf.Max(0.01f, w.z - bendStart)) * Mathf.Rad2Deg;
+            return w.z > 1.0f && w.z < 4.5f && Mathf.Abs(angleDeg) <= maxBendDeg && w.y > 0.1f && w.y < 1.4f;
         }
 
         float SourceHeight()
@@ -88,14 +113,20 @@ namespace Twilight
 
         public void Rebuild()
         {
-            float D = Distance(), hw = SourceHeight();
-            path.Clear(); arc.Clear();
+            float D = Distance(), hw = SourceHeight(), bx = BendX(D);
+            path.Clear(); arc.Clear(); sides.Clear();
             // 前沿往外多出 1 cm（淡出用），采样在判定区更密
             for (int i = 0; i <= samples; i++)
             {
                 float u = (float)i / samples;
                 float z = -0.01f + (D + 0.01f) * Mathf.Pow(u, 1.6f);
-                path.Add(new Vector3(0, ProfileY(z, D, hw), z));
+                float x = z <= bendStart ? 0f : bx * Smoother(Mathf.InverseLerp(bendStart, D, z));
+                path.Add(new Vector3(x, ProfileY(z, D, hw), z));
+            }
+            for (int i = 0; i < path.Count; i++)
+            {
+                var d = path[Mathf.Min(i + 1, path.Count - 1)] - path[Mathf.Max(i - 1, 0)]; d.y = 0f;
+                sides.Add(d.sqrMagnitude > 1e-10f ? Vector3.Cross(Vector3.up, d.normalized) : Vector3.right);
             }
             float acc = 0;
             for (int i = 0; i < path.Count; i++)
@@ -131,6 +162,7 @@ namespace Twilight
             if (!skyMaterial || path.Count < 2) return;
             var p0 = path[^1];
             var d0 = (path[^1] - path[^2]).normalized;
+            var skySide = sides[^1];
             Vector3 p1 = p0 + d0 * 6f + Vector3.up * 0.8f, p2 = p0 + skyMid, p3 = p0 + skyTop;
             const int n = 160, cols = 16;
             var pts = new List<Vector3>(n + 1); var len = new List<float>(n + 1);
@@ -151,7 +183,7 @@ namespace Twilight
                 for (int k = 0; k <= cols; k++)
                 {
                     float x = (float)k / cols;
-                    v.Add(pts[i] + Vector3.right * (x - 0.5f) * w);
+                    v.Add(pts[i] + skySide * (x - 0.5f) * w);
                     uv.Add(new Vector2(x, t)); uv2.Add(new Vector2(len[i], acc));
                 }
             }
@@ -204,7 +236,7 @@ namespace Twilight
                 for (int k = 0; k <= cols; k++)
                 {
                     float x = (float)k / cols;
-                    v.Add(path[i] + Vector3.right * (x - 0.5f) * w - Vector3.up * 0.003f);
+                    v.Add(path[i] + sides[i] * (x - 0.5f) * w - Vector3.up * 0.003f);
                     uv.Add(new Vector2(x, s)); uv2.Add(new Vector2(Length, 0));
                 }
             }
@@ -251,7 +283,7 @@ namespace Twilight
             m.bounds = new Bounds(new Vector3(0, 0.2f, Length / 2f), new Vector3(1f, 1f, Length + 1f));   // 位置在着色器里算
         }
 
-        /// <summary>桌面光影：光河投在木桌上的彩色焦散，从琴盖后面铺到桌子远端。</summary>
+        /// <summary>桌面光影：光河投在木桌上的彩色焦散，从琴盖后面铺到桌子远端（沿光河中心线，跟着弯）。</summary>
         void BuildTableGlow()
         {
             if (!tableMaterial) return;
@@ -260,9 +292,20 @@ namespace Twilight
             var m = Dyn(c, "TableGlow");
             float z0 = lidZ + 0.06f, z1 = Mathf.Min(tableFarZ, Distance()), w = widthNear * 1.35f;
             if (z1 <= z0) return;
-            m.SetVertices(new List<Vector3> { new(-w / 2, tableTop + 0.0015f, z0), new(w / 2, tableTop + 0.0015f, z0), new(w / 2, tableTop + 0.0015f, z1), new(-w / 2, tableTop + 0.0015f, z1) });
-            m.SetUVs(0, new List<Vector2> { new(0, 0), new(1, 0), new(1, 1), new(0, 1) });
-            m.SetTriangles(new[] { 0, 2, 1, 0, 3, 2 }, 0);
+            var v = new List<Vector3>(); var uv = new List<Vector2>(); var tri = new List<int>();
+            const int rows = 12;
+            for (int r = 0; r <= rows; r++)
+            {
+                float z = Mathf.Lerp(z0, z1, r / (float)rows);
+                int k = 1; while (k < path.Count - 1 && path[k].z < z) k++;
+                float t = Mathf.InverseLerp(path[k - 1].z, path[k].z, z);
+                var cp = Vector3.Lerp(path[k - 1], path[k], t); cp.y = tableTop + 0.0015f;
+                var sd = Vector3.Slerp(sides[k - 1], sides[k], t).normalized;
+                v.Add(cp - sd * w / 2); v.Add(cp + sd * w / 2);
+                float vv = r / (float)rows; uv.Add(new Vector2(0, vv)); uv.Add(new Vector2(1, vv));
+                if (r > 0) { int a = (r - 1) * 2; tri.AddRange(new[] { a, a + 2, a + 1, a + 1, a + 2, a + 3 }); }
+            }
+            m.SetVertices(v); m.SetUVs(0, uv); m.SetTriangles(tri, 0);
             m.RecalculateBounds();
         }
 
@@ -274,31 +317,35 @@ namespace Twilight
         }
 
         /// <summary>本地中心线上弧长 s 处的点和切线。</summary>
-        void Sample(float s, out Vector3 p, out Vector3 tan)
+        void Sample(float s, out Vector3 p, out Vector3 tan) => Sample(s, out p, out tan, out _);
+
+        void Sample(float s, out Vector3 p, out Vector3 tan, out Vector3 side)
         {
             int i = 1;
             while (i < arc.Count - 1 && arc[i] < s) i++;
             float t = Mathf.InverseLerp(arc[i - 1], arc[i], s);
             p = Vector3.LerpUnclamped(path[i - 1], path[i], t);
             tan = (path[i] - path[i - 1]).normalized;
+            side = Vector3.Slerp(sides[i - 1], sides[i], Mathf.Clamp01(t)).normalized;
         }
 
         /// <summary>世界坐标：第 lane 条轨道（0..3，可带小数）中线上、离前沿 s 米处，抬高 lift 米（沿河面法线）。</summary>
         public Vector3 Point(float s, float lane, float lift = 0f)
         {
-            Sample(s, out var p, out var tan);
+            Sample(s, out var p, out var tan, out var side);
             float w = WidthAt(s);
-            var n = Vector3.Cross(tan, Vector3.right);   // 河面法线（朝上）
+            var n = Vector3.Cross(tan, side);   // 河面法线（朝上）
             if (n.y < 0) n = -n;
-            p += Vector3.right * ((lane + 0.5f) / Lanes - 0.5f) * w + n * lift;
+            p += side * ((lane + 0.5f) / Lanes - 0.5f) * w + n * lift;
             return transform.TransformPoint(p);
         }
 
         /// <summary>音块朝向：+Z 顺着河往窗口，+Y 河面法线。</summary>
         public Quaternion Rotation(float s)
         {
-            Sample(s, out _, out var tan);
-            return transform.rotation * Quaternion.LookRotation(tan, Vector3.Cross(tan, Vector3.right).y >= 0 ? Vector3.Cross(tan, Vector3.right) : -Vector3.Cross(tan, Vector3.right));
+            Sample(s, out _, out var tan, out var side);
+            var n = Vector3.Cross(tan, side); if (n.y < 0) n = -n;
+            return transform.rotation * Quaternion.LookRotation(tan, n);
         }
 
         void BuildRibbon()
@@ -311,7 +358,7 @@ namespace Twilight
                 for (int c = 0; c <= cols; c++)
                 {
                     float x = (float)c / cols;
-                    v.Add(path[i] + Vector3.right * (x - 0.5f) * w);
+                    v.Add(path[i] + sides[i] * (x - 0.5f) * w);
                     uv.Add(new Vector2(x, s)); uv2.Add(new Vector2(Length, 0));
                 }
             }
@@ -352,15 +399,16 @@ namespace Twilight
                 {
                     float s = arc[i];
                     if (s < 0) continue;
-                    var c = path[i] + Vector3.right * (x01 - 0.5f) * WidthAt(s);
+                    var sd = sides[i];
+                    var c = path[i] + sd * (x01 - 0.5f) * WidthAt(s);
                     var tan = (path[Mathf.Min(i + 1, path.Count - 1)] - path[Mathf.Max(i - 1, 0)]).normalized;
-                    var up = Vector3.Cross(tan, Vector3.right); if (up.y < 0) up = -up;
+                    var up = Vector3.Cross(tan, sd); if (up.y < 0) up = -up;
                     // 窗口端 40 cm 内渐细到 0（河面在那里淡出）
                     float lw = lineWidth * (k == 0 || k == Lanes ? 1.4f : 1f) * Smooth(Mathf.Clamp01((Length - s) / 0.4f)) * Smooth(Mathf.Clamp01((s - 0.005f) / 0.07f));   // 两端都渐细：琴键前沿不再突然冒出一根铜线
                     // 截面：左下、左上、右上、右下
-                    v.Add(c - Vector3.right * lw / 2); v.Add(c - Vector3.right * lw / 2 + up * h);
-                    v.Add(c + Vector3.right * lw / 2 + up * h); v.Add(c + Vector3.right * lw / 2);
-                    n.Add(-Vector3.right); n.Add(up); n.Add(up); n.Add(Vector3.right);
+                    v.Add(c - sd * lw / 2); v.Add(c - sd * lw / 2 + up * h);
+                    v.Add(c + sd * lw / 2 + up * h); v.Add(c + sd * lw / 2);
+                    n.Add(-sd); n.Add(up); n.Add(up); n.Add(sd);
                 }
                 int rows = (v.Count - start) / 4;
                 for (int r = 0; r < rows - 1; r++)

@@ -411,6 +411,12 @@ namespace Twilight.EditorTools
             session.box = box; session.tutorial = tut;
             session.pauseButton = TKMusicBoxBuilder.PauseButton(stage, hands, ShaderMat("GlowText", "Twilight/GlowText"));
             session.world = world; session.stage = stage; session.head = camGO.transform; session.hands = hands; session.director = director;
+            {   // 第三十六轮：场景搬到琴正前方时的“眨眼”遮罩（材质引用住 Twilight/Veil，打包才不会被裁掉）
+                string vp = $"{TKArt.MatDir}/Veil.mat";
+                var vm = AssetDatabase.LoadAssetAtPath<Material>(vp);
+                if (!vm) { vm = new Material(Shader.Find("Twilight/Veil")); AssetDatabase.CreateAsset(vm, vp); }
+                session.veilMaterial = vm;
+            }
             var songTitle = Object.FindAnyObjectByType<TKSongTitle>();   // 第二十九轮：看着歌名捏一下 → 窗边歌单
             if (songTitle) { songTitle.session = session; songTitle.hands = hands; songTitle.head = camGO.transform; }
             session.room = session.gameObject.AddComponent<TKRoomTable>(); session.room.trackingSpace = camGO.transform.parent;   // 系统房间扫描里的桌子

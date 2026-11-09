@@ -22,6 +22,7 @@ namespace Twilight
         public void SetHover(int i, float v) => hover[i] = Mathf.MoveTowards(hover[i], v, Time.deltaTime * 6f);
         public bool Visible => show > 0.5f;
         public Vector3 Pos(int i) => knobs[i] ? knobs[i].position : Vector3.zero;
+        const float SideGap = 0.12f;
 
         public static TKGrabHandles Create(Transform world, Transform keys, Material gold, Material ivory)
         {
@@ -64,7 +65,7 @@ namespace Twilight
             {
                 var root = new GameObject(i == 0 ? "GrabKnobL" : "GrabKnobR").transform;
                 root.SetParent(world, false);
-                root.localPosition = new Vector3(i == 0 ? minX - 0.045f : maxX + 0.045f, padY, edgeZ);
+                root.localPosition = new Vector3(i == 0 ? minX - SideGap : maxX + SideGap, padY, edgeZ);   // 第三十六轮（用户：再往两边挪一点）：离琴两端 4.5 → 12 cm
                 root.localRotation = Quaternion.Euler(-35f, 0f, 0f);       // 圆钮正面（本地 +Y）朝上、往玩家那边斜 35°
                 Cyl(root, "Rim", gold, new Vector3(0.042f, 0.0035f, 0.042f), 0f);
                 var pad = new GameObject("Pad").transform; pad.SetParent(root, false);

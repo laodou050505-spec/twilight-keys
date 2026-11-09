@@ -84,8 +84,16 @@ namespace Twilight
         {
             stageLocal = world.InverseTransformPoint(stage.position);
             hud = director.scoreHud;
+            // 第三十六轮（用户：挪桌子时整个场景跟着动，很别扭）：琴台（琴 + 虚拟桌 + 圆钮 + 光河）单独一层 StageRig，
+            // 双手拖动 / 对齐桌子 / 调高度都只动这一层；窗户、村子、天空、铺开效果留在 World 上不动。
+            rig = new GameObject("StageRig").transform;
+            rig.SetParent(world, false);
+            stage.SetParent(rig, true);
+            var vtable = world.Find("VirtualTable");
+            if (vtable) vtable.SetParent(rig, true);
+            BuildVeil();
             // 第三十四轮：琴两端的抓手圆钮（双手各捏一颗拖动整架琴）
-            if (director.keys && box) grabHandles = TKGrabHandles.Create(world, director.keys.transform, box.rimMaterial, box.plateMaterial);
+            if (director.keys && box) grabHandles = TKGrabHandles.Create(rig, director.keys.transform, box.rimMaterial, box.plateMaterial);
             if (!Application.isEditor || UnityEngine.XR.XRSettings.isDeviceActive)
             {
                 // 不再要“手掌放平”：八音盒一出来就能按“开始”；按的那一刻按八音盒的位置和头的朝向把琴摆好（AutoPlace）
@@ -96,7 +104,7 @@ namespace Twilight
             {
                 // 编辑器没有头显：直接用编辑时的位置，弹出八音盒（← → 选歌、回车开始）
                 hands.contactY = authoredTableY + 0.007f;
-                placed = true;                                          // 编辑器：琴就在编辑时的位置，不自动摆
+                placed = true; envAnchored = true;                      // 编辑器：琴就在编辑时的位置，不自动摆
                 if (box) { box.playlist = playlist; box.songIndex = songIndex; EnterMenu(); }
                 else BeginIntro();
             }
@@ -245,6 +253,8 @@ namespace Twilight
                     if (ready && director.TapCount != lastTaps && !grabbing && Time.time > grabBusyUntil) { if (win && !lastPractice) songIndex = (songIndex + 1) % playlist.Length; BeginSong(); }
                     break;
             }
+            UpdateBlink(dt);
+            if (grabbing && grabOut && !(box && box.Visible)) Say(SayRelocate);
             lastTaps = director.TapCount;
         }
 
@@ -367,9 +377,8 @@ namespace Twilight
             var rot = Quaternion.LookRotation(fwd, Vector3.up);
             // 判定线落在指尖下面
             var stageTarget = new Vector3(res.center.x, 0, res.center.z) - fwd * director.tiles.hitS;
-            world.rotation = rot;
             var p = stageTarget - rot * new Vector3(stageLocal.x, 0, stageLocal.z);
-            world.position = new Vector3(p.x, tableTop - authoredTableY, p.z);
+            PlaceRig(new Vector3(p.x, tableTop - authoredTableY, p.z), rot);
             hands.contactY = res.contactY;
             hands.Detector.Reset();
             if (director.river) director.river.Rebuild();
@@ -491,11 +500,10 @@ namespace Twilight
             float tableTop = contactY - 0.007f;
             var f2 = rot * Vector3.forward;
             var stageTarget = new Vector3(hitAt.x, 0, hitAt.z) - f2 * director.tiles.hitS;
-            world.rotation = rot;
             var p = stageTarget - rot * new Vector3(stageLocal.x, 0, stageLocal.z);
-            world.position = new Vector3(p.x, tableTop - authoredTableY, p.z);
+            PlaceRig(new Vector3(p.x, tableTop - authoredTableY, p.z), rot);
             // 虚拟木桌桌腿始终落地：按“桌面离地多高”竖直拉伸（模型原点在桌面、原高 authoredTableY）
-            var vt = world.Find("VirtualTable");
+            var vt = rig.Find("VirtualTable");
             if (vt && floorKnown) { var sc = vt.localScale; sc.y = Mathf.Clamp((tableTop - floorY) / authoredTableY, 0.5f, 1.8f); vt.localScale = sc; }
             hands.contactY = contactY;
             hands.Detector.Reset();
@@ -549,10 +557,10 @@ namespace Twilight
                 {
                     // 松手：按现在的位置记成“对齐的桌子”，之后每次摆琴都在这里
                     grabbing = false; grabBusyUntil = Time.time + 0.8f;
-                    var rot0 = Quaternion.Euler(0f, world.eulerAngles.y, 0f); var f = rot0 * Vector3.forward;
-                    var st = world.position + rot0 * new Vector3(stageLocal.x, 0f, stageLocal.z); st.y = 0f;
+                    var rot0 = Quaternion.Euler(0f, rig.eulerAngles.y, 0f); var f = rot0 * Vector3.forward;
+                    var st = rig.position + rot0 * new Vector3(stageLocal.x, 0f, stageLocal.z); st.y = 0f;
                     var hit = st + f * director.tiles.hitS;
-                    LockTable(hit - f * TableEdgeInset, f, world.position.y + authoredTableY + 0.007f, true, "双手捏住摆放");
+                    LockTable(hit - f * TableEdgeInset, f, rig.position.y + authoredTableY + 0.007f, true, "双手捏住摆放");
                     AutoPlace();
                     if (tutorial) tutorial.NotifyGrabbed();
                     if (box) box.AlignHint = Bi.None;
@@ -563,10 +571,12 @@ namespace Twilight
                 var mid0 = (grabA0 + grabB0) * 0.5f; var mid = (pa + pb) * 0.5f;
                 var off = grabPos0 - mid0; off.y = 0f;
                 var np = new Vector3(mid.x, 0f, mid.z) + q * off;
-                world.position = new Vector3(np.x, grabPos0.y + (mid.y - mid0.y), np.z);
-                world.rotation = Quaternion.Euler(0f, grabYaw0 + dyaw, 0f);
+                rig.position = new Vector3(np.x, grabPos0.y + (mid.y - mid0.y), np.z);
+                rig.rotation = Quaternion.Euler(0f, grabYaw0 + dyaw, 0f);
                 grabBusyUntil = Time.time + 0.8f;
-                if (box && box.Visible) { box.AlignHint = SayGrab; box.AlignProgress = -1f; }
+                if (director.river && (Time.frameCount & 1) == 0) director.river.Rebuild();   // 光河跟着弯（隔帧重建）
+                grabOut = director.river && !director.river.WindowReachable(out _);
+                if (box && box.Visible) { box.AlignHint = grabOut ? SayRelocate : SayGrab; box.AlignProgress = -1f; }
                 return;
             }
             if (!allowed || !both) return;
@@ -577,9 +587,83 @@ namespace Twilight
             bool onKnobs = (Vector3.Distance(pa, k0) < KnobReach && Vector3.Distance(pb, k1) < KnobReach)
                         || (Vector3.Distance(pa, k1) < KnobReach && Vector3.Distance(pb, k0) < KnobReach);
             if (!onKnobs) return;
-            grabbing = true; grabA0 = pa; grabB0 = pb; grabPos0 = world.position; grabYaw0 = world.eulerAngles.y;
+            grabbing = true; grabA0 = pa; grabB0 = pb; grabPos0 = rig.position; grabYaw0 = rig.eulerAngles.y; grabOut = false;
             if (box && box.TableAlignRequested) box.TableAlignRequested = false;
             Debug.Log("[TK] 双手捏住琴，开始拖动");
+        }
+
+        // ---------- 第三十六轮（用户：挪桌子时整个场景跟着动很别扭；琴挪到身后怎么办）：琴台和场景分开 ----------
+        Transform rig;                 // StageRig：琴 + 虚拟桌 + 圆钮 + 光河（挂在 World 下）
+        bool envAnchored;              // 场景（World）已经在房间里摆好了
+        bool grabOut;                  // 拖动中：窗户超出光河能弯过去的范围
+        [Tooltip("眨眼遮罩材质（Twilight/Veil；场景里引用住，打包才带着色器）")] public Material veilMaterial;
+        Material veilMat; Renderer veilR;
+        float blink; int blinkPhase;   // 0 无，1 变暗，2 亮回来
+        static readonly Bi SayRelocate = new("松手后，场景会移到琴的正前方", "let go and the scene will move in front of the piano");
+
+        /// <summary>把琴台摆到 pos / rot（世界坐标）。场景还没摆过：整个世界一起摆（第一次放琴）；
+        /// 摆过了：只动琴台，场景不动——光河弯过去接上窗户；窗户超出光河能弯的范围（转到侧面、身后、换了桌子），就“眨一下眼”把场景搬到琴的正前方。</summary>
+        void PlaceRig(Vector3 pos, Quaternion rot)
+        {
+            if (!envAnchored)
+            {
+                world.SetPositionAndRotation(pos, rot);
+                rig.localPosition = Vector3.zero; rig.localRotation = Quaternion.identity;
+                envAnchored = true;
+                return;
+            }
+            rig.SetPositionAndRotation(pos, rot);
+            if (director.river) director.river.Rebuild();
+            if (director.river && !director.river.WindowReachable(out float ang))
+            {
+                PlaceLog($"[TK] 琴转到窗户 {ang:F0}° 外 / 太远：眨眼把场景搬到琴的正前方");
+                if (blinkPhase == 0) blinkPhase = 1;
+            }
+        }
+
+        /// <summary>场景搬到琴的正前方：World 摆成琴台现在的位置朝向，琴台回到 World 本地原点（琴台在世界里一动不动）。只在全黑时调用。</summary>
+        void AnchorEnvToRig()
+        {
+            var rp = rig.position; var rr = Quaternion.Euler(0f, rig.eulerAngles.y, 0f);
+            world.SetPositionAndRotation(rp, rr);
+            rig.localPosition = Vector3.zero; rig.localRotation = Quaternion.identity;
+            if (director.river) director.river.Rebuild();
+        }
+
+        void BuildVeil()
+        {
+            if (!head || !veilMaterial) return;
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Destroy(go.GetComponent<Collider>());
+            go.name = "BlinkVeil";
+            go.transform.SetParent(head, false);
+            go.transform.localPosition = Vector3.zero; go.transform.localScale = Vector3.one * 0.3f;
+            veilR = go.GetComponent<MeshRenderer>();
+            veilMat = new Material(veilMaterial);
+            veilR.sharedMaterial = veilMat;
+            veilR.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; veilR.receiveShadows = false;
+            go.SetActive(false);
+        }
+
+        /// <summary>眨眼：0.25 秒变暗 → 全黑时搬场景 → 0.35 秒亮回来。</summary>
+        void UpdateBlink(float dt)
+        {
+            if (blinkPhase == 1)
+            {
+                blink = Mathf.MoveTowards(blink, 1f, dt / 0.25f);
+                if (blink >= 1f) { AnchorEnvToRig(); blinkPhase = 2; }
+            }
+            else if (blinkPhase == 2)
+            {
+                blink = Mathf.MoveTowards(blink, 0f, dt / 0.35f);
+                if (blink <= 0f) blinkPhase = 0;
+            }
+            if (veilR)
+            {
+                bool on = blink > 0.001f;
+                if (veilR.gameObject.activeSelf != on) veilR.gameObject.SetActive(on);
+                if (on) veilMat.SetColor("_Color", new Color(0f, 0f, 0f, blink * blink * (3f - 2f * blink)));
+            }
         }
 
         // ---------- 第三十三轮：对齐桌子 ----------
