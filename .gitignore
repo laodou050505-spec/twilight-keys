@@ -1,0 +1,22 @@
+# Unity 自动生成 / 本机缓存
+/Library/
+/Temp/
+/Obj/
+/Build/
+/Builds/
+/Logs/
+/UserSettings/
+/MemoryCaptures/
+*.csproj
+*.sln
+*.pidb
+*.userprefs
+.vs/
+.idea/
+.DS_Store
+
+# 美术原始素材（构建不需要，含第三方参考图，不公开）
+/ArtSource/
+# 开发过程截图
+/Docs/Shots/
+/Docs/Shots.meta

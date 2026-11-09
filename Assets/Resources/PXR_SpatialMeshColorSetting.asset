@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2db0983a9e79077449a08d20fa535166, type: 3}
+  m_Name: PXR_SpatialMeshColorSetting
+  m_EditorClassIdentifier: ByteDance.PICO.XR::ByteDance.PICO.XR.PXR_SpatialMeshColorSetting
+  colorLists:
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  - {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  - {r: 0, g: 0, b: 1, a: 1}
+  - {r: 0, g: 1, b: 1, a: 1}
+  - {r: 1, g: 0, b: 1, a: 1}
+  - {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  - {r: 1, g: 0, b: 0, a: 1}
+  - {r: 0, g: 1, b: 0, a: 1}
+  - {r: 0.5, g: 0, b: 0, a: 1}
+  - {r: 0, g: 0.5, b: 0, a: 1}
+  - {r: 0, g: 0, b: 0.5, a: 1}
+  - {r: 1, g: 0.5, b: 0, a: 1}
+  - {r: 1, g: 0.75, b: 0.8, a: 1}
+  - {r: 0.5, g: 0, b: 0.5, a: 1}
+  - {r: 0.5, g: 0.25, b: 0, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
+  - {r: 0.5, g: 0.5, b: 0, a: 1}
+  - {r: 1, g: 0.84, b: 0, a: 1}
+  - {r: 0.75, g: 0.75, b: 0.75, a: 1}
+  - {r: 0.5, g: 1, b: 0.5, a: 1}
+  - {r: 0.5, g: 0, b: 0.25, a: 1}
+  - {r: 0.25, g: 0, b: 0.25, a: 1}
