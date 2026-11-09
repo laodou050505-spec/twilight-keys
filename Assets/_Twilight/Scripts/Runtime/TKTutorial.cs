@@ -83,7 +83,7 @@ namespace Twilight
                 case 0:
                     // 第二十四轮（用户：教学里没看到“琴太高”的提示）：原来放在单独一步、一敲桌子就跳过了。现在就写在第一步第二行
                     // 第二十七轮（用户：说“齿轮里可以调”时旁边没有暂停键）：教学时暂停钮也亮出来、轻轻招手；提示指向它
-                    Message = new Bi("把双手放到琴键上方\n琴的位置不对？双手捏住琴，拖到桌面上", "hold your hands over the keys\npiano in the wrong place? pinch it with both hands and drag it onto your table");
+                    Message = new Bi("把双手放到琴键上方\n琴的位置不对？双手捏住两边的圆钮，拖到桌面上", "hold your hands over the keys\npiano in the wrong place? pinch the two side knobs and drag it onto your table");
                     if (FingersOver() >= 2) hoverT += dt;
                     if (hoverT > 2.5f) step = 1;
                     break;
@@ -97,7 +97,7 @@ namespace Twilight
                     break;
                 case 3:
                     // 第二十三轮（用户：边玩边学开头要告诉玩家琴的高度可以调，不要大段文字）
-                    Message = new Bi("琴的位置不对？\n双手捏住琴拖动，或在齿轮里对齐桌子", "piano in the wrong place?\npinch it with both hands, or align it under the gear");
+                    Message = new Bi("琴的位置不对？\n双手捏住两边的圆钮拖动，或在齿轮里对齐桌子", "piano in the wrong place?\npinch the two side knobs, or align it under the gear");
                     if (Time.time - doneAt > 3.2f) step = 1;
                     break;
                 case 2:

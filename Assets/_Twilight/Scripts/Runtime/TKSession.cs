@@ -84,6 +84,8 @@ namespace Twilight
         {
             stageLocal = world.InverseTransformPoint(stage.position);
             hud = director.scoreHud;
+            // 第三十四轮：琴两端的抓手圆钮（双手各捏一颗拖动整架琴）
+            if (director.keys && box) grabHandles = TKGrabHandles.Create(world, director.keys.transform, box.rimMaterial, box.plateMaterial);
             if (!Application.isEditor || UnityEngine.XR.XRSettings.isDeviceActive)
             {
                 // 不再要“手掌放平”：八音盒一出来就能按“开始”；按的那一刻按八音盒的位置和头的朝向把琴摆好（AutoPlace）
@@ -504,7 +506,9 @@ namespace Twilight
         // ---------- 第三十三轮（用户：玩家可以用两只手捏住桌子来调）：双手捏住琴拖动 ----------
         bool grabbing; readonly bool[] grabPinch = new bool[2]; readonly float[] grabPinchAt = { -9f, -9f };
         Vector3 grabA0, grabB0, grabPos0; float grabYaw0, grabBusyUntil = -1f;
-        static readonly Bi SayGrab = new("双手捏着拖：一起挪 = 移动，错开 = 转向，抬 / 压 = 调高度\n摆好松手", "drag with both hands: move, twist to turn, raise or lower\nlet go when it sits right");
+        TKGrabHandles grabHandles;
+        const float KnobReach = 0.06f;                                       // 捏合点离圆钮多近算“捏住了钮”
+        static readonly Bi SayGrab = new("捏着两颗圆钮拖：一起挪 = 移动，错开 = 转向，抬 / 压 = 调高度\n摆好松手", "drag with both hands: move, twist to turn, raise or lower\nlet go when it sits right");
         static float Yaw(Vector3 a, Vector3 b) { var d = b - a; return Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg; }
 
         /// <summary>琴摆出来以后（弹奏中除外），两只手同时在琴附近捏住（拇指碰食指）：琴跟着两手走——
@@ -527,6 +531,18 @@ namespace Twilight
                 if (h == 0) pa = pp; else pb = pp;
             }
             bool both = grabPinch[0] && grabPinch[1];
+            // 抓手圆钮：能调的时候出现；手（拇指食指中点）靠近哪颗，哪颗放大
+            if (grabHandles)
+            {
+                grabHandles.Shown = allowed; grabHandles.Held = grabbing;
+                for (int k = 0; k < 2; k++)
+                {
+                    float dmin = 9f;
+                    if (L != null) dmin = Mathf.Min(dmin, Vector3.Distance(pa, grabHandles.Pos(k)));
+                    if (R != null) dmin = Mathf.Min(dmin, Vector3.Distance(pb, grabHandles.Pos(k)));
+                    grabHandles.SetHover(k, dmin < KnobReach * 1.6f ? 1f : 0f);
+                }
+            }
             if (grabbing)
             {
                 if (!both || !allowed)
@@ -553,12 +569,13 @@ namespace Twilight
                 return;
             }
             if (!allowed || !both) return;
-            // 开始：两手都是刚捏上（0.5 秒内）、都在琴附近（水平 35 cm、上下 20 cm 内）、两手分开 10 cm 以上
+            // 开始：两手都是刚捏上（0.5 秒内），而且一只手捏在左钮、另一只捏在右钮上（6 cm 内；左右手哪只捏哪颗都行）
             if (Time.time - grabPinchAt[0] > 0.5f || Time.time - grabPinchAt[1] > 0.5f) return;
-            var kc = director.keys ? director.keys.transform.position : world.position;
-            bool Near(Vector3 p) { var d = p - kc; d.y = 0f; return d.magnitude < 0.35f && Mathf.Abs(p.y - hands.contactY) < 0.2f; }
-            var sep = pb - pa; sep.y = 0f;
-            if (!Near(pa) || !Near(pb) || sep.magnitude < 0.1f) return;
+            if (!grabHandles || !grabHandles.Visible) return;
+            Vector3 k0 = grabHandles.Pos(0), k1 = grabHandles.Pos(1);
+            bool onKnobs = (Vector3.Distance(pa, k0) < KnobReach && Vector3.Distance(pb, k1) < KnobReach)
+                        || (Vector3.Distance(pa, k1) < KnobReach && Vector3.Distance(pb, k0) < KnobReach);
+            if (!onKnobs) return;
             grabbing = true; grabA0 = pa; grabB0 = pb; grabPos0 = world.position; grabYaw0 = world.eulerAngles.y;
             if (box && box.TableAlignRequested) box.TableAlignRequested = false;
             Debug.Log("[TK] 双手捏住琴，开始拖动");

@@ -33,6 +33,9 @@ namespace Twilight
         /// <summary>第三十二轮（用户：琴不能和弹出来的八音盒叠在一起）：盒底最低只能到这个世界高度（琴键顶面 + 间隙，会话摆好琴后每帧给）。</summary>
         [System.NonSerialized] public float minBottomY = float.NegativeInfinity;
         public float lidOpen = 105f;
+        // 第三十四轮（用户：盖子打开后还有缝，看着廉价）：拱盖绕盒沿后面一点翻开，下沿弧线两边翘起，和盒沿之间空出两块月牙缝。
+        // 参考图里盖子是“从盒子里立起来”的——开盖后半段再让盖子往下沉、往后退一点，下沿落到盒沿后面，缝被盒沿挡住；合上时原样扣回。
+        [Tooltip("开盖到底时合页额外移动（Body 本地：y 向下沉、z 向后退）")] public Vector3 lidSinkOpen = new(0f, -0.018f, 0.004f);
         [Tooltip("小岛（Body 空间）：收起 / 升起的高度、前后位置、大小；立柱顶在升起高度下面")]
         public float islandLow = 0.03f, islandHigh = 0.118f, islandZ = 0.012f, islandScale = 0.6f;   // 第十三轮（参考图）：小岛压低一点，盖内的村庄画露在它上方
         [Header("声音")]
@@ -85,6 +88,7 @@ namespace Twilight
         DotText flies, bar;
         Material hintMat;
         Quaternion lidClosed, drumBase;
+        Vector3 lidRestPos;
         float[] glowBase; Material[] glowMats;
         Quaternion[] toothBase;
         float[] toothShake;
@@ -130,7 +134,7 @@ namespace Twilight
             buttons = new[] { btnPrev, btnNext, btnStart, btnSettings, btnExit };
             btnHalf = new[] { new Vector2(0.0085f, 0.0085f), new Vector2(0.0085f, 0.0085f), new Vector2(0.02f, 0.0083f), new Vector2(0.0085f, 0.0085f), new Vector2(0.02f, 0.0083f) };
             for (int i = 0; i < buttons.Length; i++) if (buttons[i]) btnRest[i] = buttons[i].localPosition;
-            if (lidPivot) lidClosed = lidPivot.localRotation;
+            if (lidPivot) { lidClosed = lidPivot.localRotation; lidRestPos = lidPivot.localPosition; }
             if (drum) drumBase = drum.localRotation;
             if (teeth != null) { toothBase = new Quaternion[teeth.Length]; toothShake = new float[teeth.Length]; for (int i = 0; i < teeth.Length; i++) toothBase[i] = teeth[i].localRotation; }
             if (spinHint) { hintMat = new Material(spinHint.sharedMaterial); spinHint.sharedMaterial = hintMat; }
@@ -406,7 +410,12 @@ namespace Twilight
             }
             body.localScale = Vector3.one * scale * Mathf.Max(0.001f, pop);
             body.localPosition = new Vector3(0, Mathf.Sin(Time.time * 1.3f) * 0.003f, 0);
-            if (lidPivot) lidPivot.localRotation = Quaternion.AngleAxis(lidOpen * lid, Vector3.right) * lidClosed;
+            if (lidPivot)
+            {
+                lidPivot.localRotation = Quaternion.AngleAxis(lidOpen * lid, Vector3.right) * lidClosed;
+                float sink = Ease((lid - 0.55f) / 0.45f);                   // 先转起来，转过一大半再沉下去（避免盖沿蹭到盒沿）
+                lidPivot.localPosition = lidRestPos + lidSinkOpen * sink;
+            }
             if (glows != null)
                 for (int g = 0; g < glows.Length; g++)
                 {
@@ -494,7 +503,7 @@ namespace Twilight
             bar.visible = textA; bar.Update(dt);
             bool exitTip = !ResumeMode && !settings && buttons.Length > 4 && btnHover[4] > 0.5f;
             var showHint = exitHold > 0.02f ? SayExitHold : !AlignHint.Empty ? AlignHint : exitTip ? SayExitHow
-                : settings && settingItem == 3 ? (TableAligned ? new Bi("▶ 重新对齐 · ◀ 取消对齐 · 齿轮换下一项", "▶ align again  ·  ◀ undo  ·  gear: next") : new Bi("按 ▶，再把两手食指按在桌子靠你的边上\n也可以双手捏住琴直接拖", "press ▶, then rest both index fingers on the table's near edge\nor pinch the piano with both hands and drag it"))
+                : settings && settingItem == 3 ? (TableAligned ? new Bi("▶ 重新对齐 · ◀ 取消对齐 · 齿轮换下一项", "▶ align again  ·  ◀ undo  ·  gear: next") : new Bi("按 ▶，再把两手食指按在桌子靠你的边上\n也可以双手捏住琴两边的圆钮直接拖", "press ▶, then rest both index fingers on the table's near edge\nor pinch the two knobs beside the piano and drag"))
                 : settings ? new Bi("两边的小钮修改 · 齿轮换下一项", "side buttons change  ·  gear: next item") : Time.time < nudgeUntil ? SayLocked : hint;
             hintLine.Set(showHint);
             string cur = TKLang.En ? showHint.en : showHint.zh;
