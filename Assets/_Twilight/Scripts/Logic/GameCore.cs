@@ -294,6 +294,7 @@ namespace Twilight.Logic
             {
                 // 正在长按的轨道上又敲了一下（手指抖动重触发）：忽略
             }
+            else if (Lenient && !WaitForTap && TryHitAhead(lane)) { }
             else if (dt >= -WrongWin)
             {
                 ev.PressLane(lane, true);
@@ -302,10 +303,43 @@ namespace Twilight.Logic
             else ev.PressLane(lane, false);
         }
 
+        /// <summary>第三十八轮（用户：音块多、手换到别的轨道按时没反应）：宽松模式下不死守顺序——
+        /// 敲的轨道和下一块对不上时，往后看 4 块，找这条轨道上正好到时间的那块：
+        /// 它前面已经过了时间、又和它隔得开（> 0.25 秒）的块记漏（玩家明显跳过了）；和它几乎同时到的块不动，先算敲中的这块。</summary>
+        /// <summary>游标跳过已经先敲中的块（TryHitAhead 原地标记的）。</summary>
+        void SkipDone() { while (Cursor < Tiles.Count && Tiles[Cursor].state != TileState.Pending) Cursor++; }
+
+        bool TryHitAhead(int lane)
+        {
+            const float Near = 0.25f;
+            for (int k = Cursor + 1; k < Math.Min(Tiles.Count, Cursor + 5); k++)
+            {
+                var t2 = Tiles[k];
+                if (t2.state != TileState.Pending || !t2.Accepts(lane)) continue;
+                float dt2 = (Beat - t2.beat) / Bps - InputLag;
+                if (dt2 < -Near) return false;                                      // 后面的更晚，不用再找
+                if (dt2 > LateWindow(t2.dur / Bps)) continue;
+                // 前面的块：要么已过时间且隔得开（记漏），要么和 t2 几乎同时（保留）；有一块两样都不是，就不能跳
+                for (int j = Cursor; j < k; j++)
+                {
+                    var tj = Tiles[j];
+                    if (tj.state != TileState.Pending) continue;
+                    bool overdue = (Beat - tj.beat) / Bps - InputLag > 0f;
+                    bool together = (t2.beat - tj.beat) / Bps <= Near;
+                    if (!overdue && !together) return false;
+                }
+                while (Next != null && Next != t2 && (t2.beat - Next.beat) / Bps > Near) MissTile(Next);
+                HitTile(t2, Judge.Of(Math.Abs(dt2)));                               // 几乎同时的两块：原地先算敲中的这块（不调换顺序，预约发声按下标走）
+                return true;
+            }
+            return false;
+        }
+
         void HitTile(Tile t, Judge j)
         {
+            bool inOrder = t == Next;
             t.state = t.hold ? TileState.Holding : TileState.Hit;
-            Cursor++;
+            if (inOrder) { Cursor++; SkipDone(); }
             ev.PressLane(t.lane, false);
             ev.Play(t, t.dur / Bps, Bps);
             ComboValue++;
@@ -404,7 +438,7 @@ namespace Twilight.Logic
             missedTiles++;
             t.state = TileState.Missed;
             ev.Missed(t);
-            Cursor++;
+            Cursor++; SkipDone();
             ev.Play(t, t.dur / Bps, Bps);
             if (t.hold) ev.Release(t);
             BreakCombo();

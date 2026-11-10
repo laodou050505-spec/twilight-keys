@@ -61,7 +61,7 @@ namespace Twilight.Logic
     {
         class FingerState
         {
-            public bool armed, down; public float y, t, x, minY, vy, sy, minSy, lastTap = -9f; public int lane = -1;
+            public bool armed, down; public float y, t, x, tapX, minY, vy, sy, minSy, lastTap = -9f; public int lane = -1;
             // 一次下落的记录（诊断用）：从开始往下到开始往上
             public bool falling, fired, armedAtFall; public float fallTop, fallMin, fallMaxV; public V3 fallP;
             public readonly float[] hy = new float[16], ht = new float[16]; public int hn;
@@ -144,7 +144,7 @@ namespace Twilight.Logic
                     var p = pp.Value; p.y -= Offset;
                     if (s == null)
                     {
-                        fingers[key] = s = new FingerState { armed = p.y > cfg.armOnAcquire, y = p.y, t = t, minY = p.y, sy = p.y, minSy = p.y };
+                        fingers[key] = s = new FingerState { armed = p.y > cfg.armOnAcquire, y = p.y, t = t, minY = p.y, sy = p.y, minSy = p.y, x = p.x, tapX = p.x };
                         s.Push(t, p.y);
                         continue;
                     }
@@ -160,7 +160,7 @@ namespace Twilight.Logic
                     Diagnose(s, side, f, p, t);
                     if (s.armed && p.y < cfg.zoneTop && drop >= cfg.minDrop && s.vy >= cfg.minDownSpeed && t - s.lastTap >= cfg.refractory)
                     {
-                        s.armed = false; s.down = true; s.minY = p.y; s.minSy = sy; s.lane = -1; s.lastTap = t; s.fired = true;
+                        s.armed = false; s.down = true; s.minY = p.y; s.minSy = sy; s.lane = -1; s.lastTap = t; s.fired = true; s.tapX = p.x;
                         int ln = LaneAt(p.x);
                         if (InZone(p) && (multi || t >= lockUntil[si]) && (ln < 0 || t - laneLast[ln] >= cfg.laneRefractory))
                         {
@@ -185,7 +185,8 @@ namespace Twilight.Logic
                             s.down = false; s.lane = -1;
                         }
                         // 抬起 rearmRise 才能再敲（追踪抖动不会重新武装）；离开桌面区域也重新武装
-                        if (!s.armed && (sRise > cfg.rearmRise || sy > cfg.zoneTop + 0.015f))
+                        // 第三十八轮（用户：手换到别的轨道按时没反应）：手指横着挪过大半条轨道（哪怕几乎没抬起来）也算准备好了
+                        if (!s.armed && (sRise > cfg.rearmRise || sy > cfg.zoneTop + 0.015f || (Math.Abs(p.x - s.tapX) > cfg.laneW * 0.6f && sRise > 0.0015f)))
                         {
                             if (s.lane >= 0 && cfg.autoCalibrate) Calibrate(s.minY);
                             s.armed = true;

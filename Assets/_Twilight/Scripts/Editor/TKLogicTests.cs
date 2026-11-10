@@ -46,6 +46,28 @@ namespace Twilight.EditorTools
                 for (int i = 0; i < 72; i++) g.Update(1f / 72f);
                 Check(c.releases == 1 && c.misses == 1 && g.State == GameState.Playing, $"长按提前松手：松音 {c.releases}、断连击 {c.misses}、状态 {g.State}");
             }
+            // 2b. 第三十八轮（用户：音块多 / 手换到别的轨道按时没反应）：宽松模式不死守顺序
+            {
+                // 漏了一块、直接敲下一块：下一块算中，漏的那块记漏
+                var c = new Catcher();
+                var g = new GameCore(c) { Lenient = true, IsHeld = _ => true };
+                g.Start("t", 120, "C4:1 B5:1 C4:1 B5:1 C4:2");
+                var tiles = new List<Tile>(g.Tiles);
+                g.Tap(tiles[0].lane);
+                float t = 0f; while ((g.Beat - tiles[2].beat) / g.Bps < -0.02f) { g.Update(1f / 72f); t += 1f / 72f; }
+                g.Tap(tiles[2].lane);
+                Check(g.Hits == 2 && tiles[1].state == TileState.Missed && tiles[2].state != TileState.Pending && g.Next == tiles[3],
+                    $"跳过一块直接敲下一块：敲中 {g.Hits} / 2，跳过的那块 {tiles[1].state}，下一块对 {g.Next == tiles[3]}");
+                // 两块几乎同时（隔 0.125 秒、不同轨道）：先敲了后一块，后一块算中；再敲前一块也算中
+                var c2 = new Catcher();
+                var g2 = new GameCore(c2) { Lenient = true, IsHeld = _ => true };
+                g2.Start("t", 120, "C4:1 C4:0.25 B5:0.25 C4:2");
+                var t2 = new List<Tile>(g2.Tiles);
+                g2.Tap(t2[0].lane);
+                while ((g2.Beat - t2[1].beat) / g2.Bps < -0.01f) g2.Update(1f / 72f);
+                g2.Tap(t2[2].lane); g2.Tap(t2[1].lane);
+                Check(t2[1].lane != t2[2].lane && g2.Hits == 3 && c2.misses == 0, $"几乎同时的两块先敲后一块：敲中 {g2.Hits} / 3，断连击 {c2.misses}");
+            }
             // 3. 长按一直按着：完整
             {
                 var c = new Catcher();
@@ -139,6 +161,17 @@ namespace Twilight.EditorTools
                     foreach (var e in d.Update(i / 72f, Tips(0.004f + drift + J(), 0.004f + drift + J(), 0.004f + drift + J()))) if (!e.release) taps++;
                 }
                 Check(taps == 0, $"手搭在桌上（抖动 ±2.5 mm）：误触 {taps} 次（应为 0）");
+            }
+            // 8e. 同一根手指换轨道：敲完只抬 3 mm、横着挪到隔两条的轨道再敲——也要认
+            {
+                var d = new TapDetector();
+                int taps = 0; var lanes = new List<int>(); float t = 0f;
+                void F(float x, float y) { foreach (var e in d.Update(t, new[] { null, new V3?[] { null, new V3(x, y, 0f), null, null, null } })) if (!e.release) { taps++; lanes.Add(e.lane); } t += 1f / 72f; }
+                for (int i = 0; i <= 10; i++) F(-0.12f, Mathf.Lerp(0.04f, 0.004f, i / 10f));        // 敲轨道 0
+                for (int i = 0; i <= 12; i++) F(Mathf.Lerp(-0.12f, 0.04f, i / 12f), 0.004f + 0.003f * Mathf.Sin(i / 12f * Mathf.PI));   // 贴着桌面横移，只抬 3 mm
+                for (int i = 0; i <= 6; i++) F(0.04f, 0.004f + 0.009f * Mathf.Sin(i / 6f * Mathf.PI * 0.5f));                        // 抬起 9 mm（平滑后约 5 mm）
+                for (int i = 0; i <= 6; i++) F(0.04f, Mathf.Lerp(0.013f, 0.004f, i / 6f));                                           // 敲下去
+                Check(taps == 2 && lanes.Count == 2 && lanes[0] != lanes[1], $"同一根手指换轨道再敲：认出 {taps} / 2 下（轨道 {string.Join("→", lanes)}）");
             }
             // 9. 手指搭在桌上不动（追踪抖动 ±5 mm、2 秒）：一次都不能触发；慢慢往上抬也不触发
             {

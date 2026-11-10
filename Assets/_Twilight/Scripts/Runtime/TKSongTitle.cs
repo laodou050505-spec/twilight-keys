@@ -219,7 +219,7 @@ namespace Twilight
                 var pos = Vector3.Lerp(from, slotW, e) + Vector3.up * Mathf.Sin(e * Mathf.PI) * 0.08f;   // 从歌名牌里飞出来，带一点弧线
                 bool small = c.kind != 0;
                 var half = small ? new Vector2(cardW * 0.275f, cardH * 0.36f) : new Vector2(cardW / 2f, cardH / 2f);
-                float hv = e > 0.95f ? Hover(pos, face, half, 0.015f) : 0f;
+                float hv = e > 0.95f ? Hover(pos, face, half, c.hover > 0.5f ? 0.035f : 0.01f) : 0f;   // 第三十八轮：进出悬停有迟滞，视线在卡片边上抖不会来回闪
                 c.hover = Mathf.MoveTowards(c.hover, hv, Time.deltaTime * 8f);
                 if (hv > best) { best = hv; hit = c; }
                 c.t.SetPositionAndRotation(pos - face * Vector3.forward * (0.015f * c.hover), face);
@@ -255,9 +255,15 @@ namespace Twilight
         /// <summary>编辑器测试：指定视线（不为空时用它）。</summary>
         [System.NonSerialized] public Ray? simGaze;
         Vector3 gazeDir;
+        int gazeRayFrame = -1; Ray gazeRay;
         Ray Gaze()
         {
             if (simGaze.HasValue) return simGaze.Value;
+            if (gazeRayFrame == Time.frameCount) return gazeRay;            // 第三十八轮：一帧只算一次（原来每张卡片各算一次，平滑被叠了十几遍 = 没平滑）
+            gazeRayFrame = Time.frameCount; gazeRay = GazeNow(); return gazeRay;
+        }
+        Ray GazeNow()
+        {
             var h = head ? head : Camera.main ? Camera.main.transform : transform;
             var target = new Ray(h.position, h.forward);
 #if ENABLE_PICO_XR_SDK && UNITY_ANDROID && !UNITY_EDITOR

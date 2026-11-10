@@ -29,7 +29,8 @@ namespace Twilight
         [Tooltip("盖内标题牌材质（中英两张贴图，按界面语言换）")] public Material titleMat;
         public Texture2D titleZhTex, titleEnTex;
         [Header("摆放")]
-        public float distance = 0.55f, below = 0.25f, recenterAngle = 25f, scale = 1.3f;   // 第三十二轮（用户：八音盒往上挪一点）：眼下 30 → 25 cm
+        public float distance = 0.45f;   // 第三十八轮（用户：八音盒有点远）0.55 → 0.45
+        public float below = 0.25f, recenterAngle = 25f, scale = 1.3f;   // 第三十二轮（用户：八音盒往上挪一点）：眼下 30 → 25 cm
         /// <summary>第三十二轮（用户：琴不能和弹出来的八音盒叠在一起）：盒底最低只能到这个世界高度（琴键顶面 + 间隙，会话摆好琴后每帧给）。</summary>
         [System.NonSerialized] public float minBottomY = float.NegativeInfinity;
         public float lidOpen = 105f;
@@ -409,7 +410,7 @@ namespace Twilight
                 if (phase == Phase.Opening && t > 3.5f) phase = Phase.Open;
             }
             body.localScale = Vector3.one * scale * Mathf.Max(0.001f, pop);
-            body.localPosition = new Vector3(0, Mathf.Sin(Time.time * 1.3f) * 0.003f, 0);
+            body.localPosition = Vector3.zero;   // 第三十八轮（用户：一直在闪、看着晕）：去掉上下浮动，八音盒稳稳停在空中
             if (lidPivot)
             {
                 lidPivot.localRotation = Quaternion.AngleAxis(lidOpen * lid, Vector3.right) * lidClosed;
@@ -729,7 +730,7 @@ namespace Twilight
                 anchorPos = want;
                 if (!anchored) { root.position = want; anchored = true; var ff = want - head.position; ff.y = 0; root.rotation = Quaternion.LookRotation(ff, Vector3.up); }
             }
-            else anchorPos.y = Mathf.Lerp(anchorPos.y, want.y, 1f - Mathf.Exp(-dt * 0.8f));
+            else if (Mathf.Abs(anchorPos.y - want.y) > 0.04f) anchorPos.y = want.y;   // 第三十八轮：高度不再每帧跟着头微动（细节在像素间滑 = 闪），差 4 cm 以上才平滑挪过去
             float k = 1f - Mathf.Exp(-dt * 2f);
             root.position = Vector3.Lerp(root.position, anchorPos, k);
             var face = anchorPos - head.position; face.y = 0;

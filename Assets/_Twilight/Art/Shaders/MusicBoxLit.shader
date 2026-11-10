@@ -34,7 +34,7 @@ Shader "Twilight/MusicBoxLit"
             TEXTURE2D(_Matcap); SAMPLER(sampler_Matcap);
             TEXTURE2D(_Relief); SAMPLER(sampler_Relief);
             CBUFFER_START(UnityPerMaterial)
-                float4 _MainTex_ST, _Relief_ST; half4 _Color, _RimColor; half _Mode, _Gloss, _Rim, _AOHeight, _Lift, _ReliefDepth, _NoAO;
+                float4 _MainTex_ST, _Relief_ST, _Relief_TexelSize; half4 _Color, _RimColor; half _Mode, _Gloss, _Rim, _AOHeight, _Lift, _ReliefDepth, _NoAO;
             CBUFFER_END
             struct A { float4 pos : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct V { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float3 nw : TEXCOORD1; float3 ws : TEXCOORD2; float h : TEXCOORD3; UNITY_VERTEX_OUTPUT_STEREO };
@@ -63,9 +63,12 @@ Shader "Twilight/MusicBoxLit"
                     float3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
                     float3 T = dp2p * du1.x + dp1p * du2.x, B = dp2p * du1.y + dp1p * du2.y;
                     float inv = rsqrt(max(1e-12, max(dot(T, T), dot(B, B))));
-                    float3 tn = rl.rgb * 2 - 1; tn.xy *= _ReliefDepth;
+                    // 第三十八轮（用户：底座一直在闪）：花纹比像素还细时，凹凸和明暗对比按“一个像素覆盖几个贴图像素”淡掉，远看是一圈柔和的鎏金，近看才有浮雕
+                    float fp = max(length(du1 * _Relief_ST.xy), length(du2 * _Relief_ST.xy)) * max(_Relief_TexelSize.z, 1.0);
+                    half keep = lerp(0.55, 1.0, saturate(2.0 - 0.5 * fp));            // 最少保留 55%：花纹一直看得见，只是不那么尖
+                    float3 tn = rl.rgb * 2 - 1; tn.xy *= _ReliefDepth * keep;
                     N = normalize(T * inv * tn.x + B * inv * tn.y + N * tn.z);
-                    relH = rl.a;
+                    relH = lerp(0.4, rl.a, keep);
                 }
                 // matcap 的“观察方向”：用盒子中心 → 眼睛的方向 + 世界竖直搭基（不用相机朝向）。
                 // 原来用视图矩阵：一转头，镜面细高光就整条扫过盒面 = 闪白；现在只有人走动才变，转头 / 歪头都不变

@@ -44,10 +44,18 @@ Shader "Twilight/Letter"
             half4 frag(V i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
-                half raw = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a;
-                // 吃墨：阈值随物体空间噪声抖一点（毫米级）
-                float n = VNoise(i.op * 900.0) * 0.6 + VNoise(i.op * 2600.0) * 0.4;
-                half core = smoothstep(0.5 - 0.22 * _Rough * n, 0.62, raw);
+                // 第三十八轮（用户：歌单 / 按钮上的字一直在闪）：字体贴图没有 mipmap，远处缩得很小时一个像素里跨好几个字形像素，
+                // 头一动就在像素之间跳。改成在像素覆盖的范围里取 4 个点平均（超采样），边缘宽度按屏幕导数自适应（字小时边更软）。
+                float2 dx = ddx(i.uv), dy = ddy(i.uv);
+                half raw = 0.25 * (SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv + 0.3 * (dx + dy)).a + SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv + 0.3 * (dx - dy)).a
+                                 + SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv - 0.3 * (dx + dy)).a + SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv - 0.3 * (dx - dy)).a);
+                // 吃墨：阈值随物体空间噪声抖一点（毫米级）。噪声比像素还细时会闪烁——按每像素覆盖多大把粗糙度淡掉
+                float px = max(length(ddx(i.op)), length(ddy(i.op)));               // 一个像素覆盖多少米（物体空间）
+                half rough = _Rough * saturate(1.0 - px * 1500.0);                  // 像素 > 0.7 mm 就不再吃墨
+                float n = VNoise(i.op * 900.0);
+                half w = max(fwidth(raw) * 0.75, 0.05);
+                half mid = 0.56 - 0.18 * rough * n;
+                half core = smoothstep(mid - w, mid + w, raw);
                 half halo = 0;
                 [unroll] for (int k = 0; k < 8; k++)
                 {
