@@ -69,7 +69,7 @@ namespace Twilight.EditorTools
             {
                 var d = new TapDetector();
                 V3?[][] Tips(float y) => new[] { null, new V3?[] { null, new V3(-0.1f, y, 0f), null, null, null } };
-                d.Update(0f, Tips(0.08f)); d.Update(0.05f, Tips(0.05f));
+                d.Update(0f, Tips(0.1f)); d.Update(0.05f, Tips(0.075f));
                 var ev = d.Update(0.1f, Tips(0.0f));
                 bool tapped = ev.Count == 1 && !ev[0].release;
                 int lane = tapped ? ev[0].lane : -1;
@@ -95,19 +95,50 @@ namespace Twilight.EditorTools
             {
                 var d = new TapDetector();
                 V3?[][] One(float x, float y) => new[] { null, new V3?[] { null, new V3(x, y, 0f), null, null, null } };
-                d.Update(0f, One(-0.1f, 0.08f)); d.Update(0.05f, One(-0.1f, 0.05f));
+                d.Update(0f, One(-0.1f, 0.1f)); d.Update(0.05f, One(-0.1f, 0.075f));
                 var ev = d.Update(0.1f, One(-0.1f, 0.0f));
                 int lane = ev.Count == 1 ? ev[0].lane : -1;
                 d.Update(0.2f, One(-0.1f + 0.1f, 0.004f));            // 指尖贴着桌面横移 10 cm（超过一条轨道）
                 bool slidAway = !d.IsLaneHeld(lane);
                 var d2 = new TapDetector();
                 V3?[][] Two(V3? idx, float midX) => new[] { null, new V3?[] { null, idx, new V3(midX, 0.004f, 0f), null, null } };
-                d2.Update(0f, Two(new V3(-0.1f, 0.08f, 0f), -0.09f)); d2.Update(0.05f, Two(new V3(-0.1f, 0.05f, 0f), -0.09f));
+                d2.Update(0f, Two(new V3(-0.1f, 0.1f, 0f), -0.09f)); d2.Update(0.05f, Two(new V3(-0.1f, 0.075f, 0f), -0.09f));
                 var ev2 = d2.Update(0.1f, Two(new V3(-0.1f, 0.0f, 0f), -0.09f));
                 int lane2 = ev2.Count >= 1 ? ev2[0].lane : -1;
                 d2.Update(0.15f, Two(null, -0.09f));                  // 食指追踪丢了，中指还贴在同一条轨道
                 bool lostButHeld = d2.IsLaneHeld(lane2);
                 Check(lane >= 0 && slidAway && lane2 >= 0 && lostButHeld, $"长按：手横着移开 → 松开 {slidAway}；按的手指追踪闪掉、旁边手指还贴着 → 仍按着 {lostButHeld}");
+            }
+            // 8b. 第三十七轮（用户：有时按下去没反应，手抬得不高就认不出）：指尖只在桌面上方 1.3 cm 处、每下只抬 7 mm 轻轻敲，72 Hz 追踪，8 下都要认
+            {
+                var d = new TapDetector();
+                V3?[][] Tips(float y) => new[] { null, new V3?[] { null, new V3(0.05f, y, 0f), null, null, null } };
+                var ys = new List<float> { 0.03f, 0.025f };
+                for (int k = 0; k < 8; k++) ys.AddRange(new[] { 0.016f, 0.011f, 0.007f, 0.006f, 0.009f, 0.012f, 0.013f });
+                int taps = 0; float t = 0f;
+                for (int q = 1; q < ys.Count; q++) for (int f = 0; f < 3; f++) { foreach (var e in d.Update(t, Tips(Mathf.Lerp(ys[q - 1], ys[q], f / 3f)))) if (!e.release) taps++; t += 1f / 72f; }
+                Check(taps == 8, $"低抬轻敲（只抬 7 mm）：认出 {taps} / 8 下");
+            }
+            // 8c. 追踪丢了又找回：手指在桌面上方 3 cm 被重新追踪到，接着就敲——第一下也要认
+            {
+                var d = new TapDetector();
+                V3?[][] Tips(float y) => new[] { null, new V3?[] { null, new V3(-0.05f, y, 0f), null, null, null } };
+                int taps = 0; float t = 0f;
+                foreach (var y in new[] { 0.03f, 0.028f, 0.02f, 0.012f, 0.005f, 0.004f }) { foreach (var e in d.Update(t, Tips(y))) if (!e.release) taps++; t += 1f / 72f; }
+                Check(taps == 1, $"追踪找回后的第一下：认出 {taps} / 1 下");
+            }
+            // 8d. 手搭在桌上（真机量级的追踪抖动 ±2.5 mm + 缓慢漂移）4 秒：一次都不能触发
+            {
+                var d = new TapDetector();
+                var rnd = new System.Random(5); int taps = 0;
+                V3?[][] Tips(float a, float b, float c) => new[] { null, new V3?[] { null, new V3(0.05f, a, 0f), new V3(0f, b, 0f), new V3(-0.05f, c, 0f), null } };
+                for (int i = 0; i < 288; i++)
+                {
+                    float drift = 0.003f * Mathf.Sin(i / 72f * 2.1f);
+                    float J() => ((float)rnd.NextDouble() - 0.5f) * 0.005f;
+                    foreach (var e in d.Update(i / 72f, Tips(0.004f + drift + J(), 0.004f + drift + J(), 0.004f + drift + J()))) if (!e.release) taps++;
+                }
+                Check(taps == 0, $"手搭在桌上（抖动 ±2.5 mm）：误触 {taps} 次（应为 0）");
             }
             // 9. 手指搭在桌上不动（追踪抖动 ±5 mm、2 秒）：一次都不能触发；慢慢往上抬也不触发
             {

@@ -105,6 +105,8 @@ namespace Twilight
             var song = SongLibrary.Find(id) ?? SongLibrary.Load()[0];
             songId = song.id;
             Game ??= new GameCore(new Events(this));
+            // 第三十七轮：敲击检测对指尖高度做了平滑（时间常数约 25 ms），触发会晚约 20 ms，判定时补回来
+            { var hti = FindAnyObjectByType<HandTapInput>(); Game.InputLag = hti && hti.config != null ? hti.config.smoothTau * 0.8f : 0f; }
             Game.Auto = autoPlay; Game.Lenient = lenient; Game.WaitForTap = false; Game.Master = MasterMode;
             FollowStreak = 0;
             Game.IsHeld = IsHeld;

@@ -31,19 +31,23 @@ namespace Twilight.Logic
     {
         public int lanes = 4;
         public float laneW = 0.082f;       // 每条轨道宽（米）= 两个八度键盘宽 / 4
-        public float sideMargin = 0.07f;   // 两侧多给一点：超出的算最近的那条
-        public float zoneFar = 0.24f;      // 判定线远侧（朝窗户）
-        public float zoneNear = 0.14f;     // 判定线近侧（朝玩家）
-        public float zoneTop = 0.045f;     // 落点要在接触面以上这么高以内（11-02 真机两分钟只认出 5 下：3 cm 太严，追踪的指尖常停在桌面上方 3–4 cm）
-        public float minDrop = 0.006f;     // 最近 0.15 秒里至少往下落了这么多（只是“低”不算——搭在桌上的手指不会误触）
-        public float minDownSpeed = 0.1f; // 往下的速度（米 / 秒，平滑后）
-        public float rearmRise = 0.009f;   // 敲完要从最低点抬起这么多才能再敲（追踪抖动 ±5 mm 不会重新武装）
+        public float sideMargin = 0.10f;   // 两侧多给一点：超出的算最近的那条（第三十七轮 0.07 → 0.10）
+        public float zoneFar = 0.30f;      // 判定线远侧（朝窗户）；第三十七轮（用户：手势识别范围放大）0.24 → 0.30
+        public float zoneNear = 0.18f;     // 判定线近侧（朝玩家）；第三十七轮 0.14 → 0.18
+        public float zoneTop = 0.06f;    // 第三十七轮（用户：按下去有时没反应）4.5 → 6 cm；     // 落点要在接触面以上这么高以内（11-02 真机两分钟只认出 5 下：3 cm 太严，追踪的指尖常停在桌面上方 3–4 cm）
+        public float minDrop = 0.004f;   // 第三十七轮 6 → 4 mm（手抬得不高也认）；     // 最近 0.15 秒里至少往下落了这么多（只是“低”不算——搭在桌上的手指不会误触）
+        public float minDownSpeed = 0.065f; // 第三十七轮 0.1 → 0.065（轻轻落下也认）； // 往下的速度（米 / 秒，平滑后）
+        public float rearmRise = 0.0045f; // 第三十七轮 9 → 4.5 mm（抬一点点就能敲下一下；抖动靠 smoothTau 滤掉）；   // 敲完要从最低点抬起这么多才能再敲（追踪抖动 ±5 mm 不会重新武装）
         public float refractory = 0.15f;   // 同一根手指两次敲击至少隔这么久
         public float laneRefractory = 0.12f; // 同一条轨道两次敲击至少隔这么久（不同手指同时落也只算一次）
         public float release = 0.026f;     // 长按：离最低点抬起超过这么多算松手（第二十三轮：3.2 → 2.6 cm，抖 1–2 cm 不断、拿开就松）
-        public float handLock = 0.1f;      // 同一只手触发后这么久内其他手指不触发
+        public float handLock = 0.07f;   // 第三十七轮 0.1 → 0.07；      // 同一只手触发后这么久内其他手指不触发
         public bool ignoreThumb = true;    // 大拇指常搭在桌上：不参与判定
         public bool autoCalibrate = true;  // 用每次敲击的最低点慢慢校准桌面高度
+        [UnityEngine.Tooltip("指尖高度平滑的时间常数（秒，0 = 不平滑）：落了多少 / 多快 / 抬了多少都用平滑后的高度算，追踪抖动不会被当成敲击")]
+        public float smoothTau = 0.025f;
+        [UnityEngine.Tooltip("手指刚被追踪到（或丢了又找回）时，离接触面这么高就算“准备好了”，第一下就能敲")]
+        public float armOnAcquire = 0.02f;
     }
 
     /// <summary>指尖敲击检测。坐标 = 琴面坐标：原点在判定线中心、y 是高出接触面的米数，x 朝右，z 朝玩家。
@@ -57,7 +61,7 @@ namespace Twilight.Logic
     {
         class FingerState
         {
-            public bool armed, down; public float y, t, x, minY, vy, lastTap = -9f; public int lane = -1;
+            public bool armed, down; public float y, t, x, minY, vy, sy, minSy, lastTap = -9f; public int lane = -1;
             // 一次下落的记录（诊断用）：从开始往下到开始往上
             public bool falling, fired, armedAtFall; public float fallTop, fallMin, fallMaxV; public V3 fallP;
             public readonly float[] hy = new float[16], ht = new float[16]; public int hn;
@@ -140,19 +144,23 @@ namespace Twilight.Logic
                     var p = pp.Value; p.y -= Offset;
                     if (s == null)
                     {
-                        fingers[key] = s = new FingerState { armed = p.y > cfg.zoneTop, y = p.y, t = t, minY = p.y };
+                        fingers[key] = s = new FingerState { armed = p.y > cfg.armOnAcquire, y = p.y, t = t, minY = p.y, sy = p.y, minSy = p.y };
                         s.Push(t, p.y);
                         continue;
                     }
                     if (cfg.ignoreThumb && f == Finger.Thumb) { s.y = p.y; s.t = t; continue; }
                     float dt = Math.Max(1e-4f, t - s.t);
-                    float vy = (s.y - p.y) / dt;                       // 往下为正
-                    s.vy = s.vy * 0.25f + vy * 0.75f;                  // 轻微平滑（追踪抖动；平滑太重会压住“刚抬完马上敲”的速度）
-                    float drop = s.Recent(t, 0.15f) - p.y;             // 最近 0.15 秒落了多少
+                    // 第三十七轮（用户：有时按下去没反应、手抬得不高认不出）：阈值放宽的同时，先把指尖高度平滑一下，
+                    // 速度 / 下落量 / 抬起量都用平滑后的高度算——真敲击是连续几帧往下走，平滑后照样明显；追踪抖动忽上忽下，平滑后抵消
+                    float sy = cfg.smoothTau <= 0f ? p.y : s.sy + (p.y - s.sy) * (1f - (float)Math.Exp(-dt / cfg.smoothTau));
+                    float vy = (s.sy - sy) / dt;                       // 往下为正
+                    s.vy = s.vy * 0.25f + vy * 0.75f;
+                    s.sy = sy;
+                    float drop = s.Recent(t, 0.15f) - sy;              // 最近 0.15 秒落了多少
                     Diagnose(s, side, f, p, t);
                     if (s.armed && p.y < cfg.zoneTop && drop >= cfg.minDrop && s.vy >= cfg.minDownSpeed && t - s.lastTap >= cfg.refractory)
                     {
-                        s.armed = false; s.down = true; s.minY = p.y; s.lane = -1; s.lastTap = t; s.fired = true;
+                        s.armed = false; s.down = true; s.minY = p.y; s.minSy = sy; s.lane = -1; s.lastTap = t; s.fired = true;
                         int ln = LaneAt(p.x);
                         if (InZone(p) && (multi || t >= lockUntil[si]) && (ln < 0 || t - laneLast[ln] >= cfg.laneRefractory))
                         {
@@ -166,7 +174,8 @@ namespace Twilight.Logic
                     if (s.down || !s.armed)
                     {
                         s.minY = Math.Min(s.minY, p.y);
-                        float rise = p.y - s.minY;
+                        s.minSy = Math.Min(s.minSy, sy);
+                        float rise = p.y - s.minY, sRise = sy - s.minSy;
                         // 长按松手：离最低点抬起超过 release
                         // 长按松手：抬起超过 release，或者横向滑出这条轨道（超过半条轨道宽）
                         float laneMid = s.lane >= 0 ? -cfg.lanes * cfg.laneW / 2f + (s.lane + 0.5f) * cfg.laneW : p.x;
@@ -176,13 +185,13 @@ namespace Twilight.Logic
                             s.down = false; s.lane = -1;
                         }
                         // 抬起 rearmRise 才能再敲（追踪抖动不会重新武装）；离开桌面区域也重新武装
-                        if (!s.armed && (rise > cfg.rearmRise || p.y > cfg.zoneTop + 0.015f))
+                        if (!s.armed && (sRise > cfg.rearmRise || sy > cfg.zoneTop + 0.015f))
                         {
                             if (s.lane >= 0 && cfg.autoCalibrate) Calibrate(s.minY);
                             s.armed = true;
                         }
                     }
-                    s.Push(t, p.y);
+                    s.Push(t, sy);
                     s.y = p.y; s.t = t; s.x = p.x;
                 }
                 if (multiList.Count > 0)

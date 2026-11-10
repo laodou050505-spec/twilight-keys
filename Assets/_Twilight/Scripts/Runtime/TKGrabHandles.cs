@@ -22,7 +22,7 @@ namespace Twilight
         public void SetHover(int i, float v) => hover[i] = Mathf.MoveTowards(hover[i], v, Time.deltaTime * 6f);
         public bool Visible => show > 0.5f;
         public Vector3 Pos(int i) => knobs[i] ? knobs[i].position : Vector3.zero;
-        const float SideGap = 0.12f;
+        const float SideGap = 0.085f;   // 第三十七轮（用户：再往里挪一点）12 → 8.5 cm
 
         public static TKGrabHandles Create(Transform world, Transform keys, Material gold, Material ivory)
         {
