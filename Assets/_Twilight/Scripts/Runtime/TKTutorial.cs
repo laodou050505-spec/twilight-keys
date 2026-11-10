@@ -21,6 +21,8 @@ namespace Twilight
         /// <summary>第三十五轮（用户：圆钮要在新手教学里告诉玩家）：第一步“摆琴”——两颗圆钮招手。</summary>
         public bool AtKnobs => Active && step == 4;
         /// <summary>会话通知：玩家双手捏住圆钮拖过一次（松手了）。</summary>
+        /// <summary>第三十九轮：开局已经有“摆琴”环节，教学直接从“手放到琴键上方”开始。</summary>
+        public void SkipKnobs() { if (Active && step == 4) { step = 0; hoverT = 0f; beganAt = Time.time; } }
         public void NotifyGrabbed() { if (Active && step == 4) { step = 0; hoverT = 0f; beganAt = Time.time; } }
         public Bi Message { get; private set; } = Bi.None;
 
@@ -119,7 +121,7 @@ namespace Twilight
             return false;
         }
 
-        int FingersOver()
+        public int FingersOver()
         {
             if (!hands || float.IsNaN(hands.contactY)) return 0;
             int n = 0;

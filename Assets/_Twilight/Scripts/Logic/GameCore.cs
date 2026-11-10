@@ -83,8 +83,8 @@ namespace Twilight.Logic
     {
         public const int Lanes = 4;
         public const float ViewBeats = 26f;           // 提前生成多远
-        public const float Early = 0.65f;             // 最早可点（秒）
-        public const float LateMin = 0.5f, LateMax = 0.8f;   // 真机手部追踪有延迟，晚点的余量要大
+        public const float Early = 0.3f;              // 最早可点（秒）；第三十九轮（用户：音块离得很远就能点中）0.65 → 0.3，只比“很好”的窗口宽一点
+        public const float LateMin = 0.3f, LateMax = 0.45f;  // 真机手部追踪有延迟，晚点要留余量；第三十九轮（用户：漏了没反馈）0.5~0.8 → 0.3~0.45，漏块马上判、马上给反馈
         public const float WrongWin = 0.22f;          // 离下一块这么近时点错轨道才算错
         /// <summary>长按：拍数 ≥ HoldMinBeats，或拍数 ≥ 1.5 且时长 ≥ 1 秒。按住到 HoldOk 比例算完整，满 HoldFull 额外加分。</summary>
         public const float HoldMinBeats = 2f, HoldOk = 0.7f, HoldFull = 0.9f;
@@ -287,7 +287,7 @@ namespace Twilight.Logic
             }
             if (next.Accepts(lane))
             {
-                if (dt < -Early) { ev.PressLane(lane, false); return; }
+                if (dt < -Early) { ev.PressLane(lane, dt > -Early - 0.5f); return; }   // 第三十九轮：早了一点（音块还在半路）也给一声轻“嗒”，不扣连击
                 HitTile(next, Judge.Of(Math.Abs(dt)));
             }
             else if (holding != null && holding.Accepts(lane))

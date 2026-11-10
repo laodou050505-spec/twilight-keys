@@ -110,13 +110,15 @@ namespace Twilight
             float s = Mathf.Max(raw, -0.2f);
             v.go.transform.SetPositionAndRotation(river.Point(s, Pos(t), 0.0015f), river.Rotation(s) * tilePrefab.transform.localRotation);
             v.go.transform.localScale = new Vector3(TileWidth / MeshWidth, 1f, 1f) * Scale(s);
-            SetTap(v, t.lane, FadeAt(s) * missFade, t.state == TileState.Missed ? 1f : 0f, t.state == TileState.Missed);
+            // 第三十九轮（用户：漏了要有反馈）：过了判定线还没敲到（还在宽容时间里），马上开始褪成灰、变淡——一眼看出“这块要漏了”
+            float overdue = t.state == TileState.Pending ? Mathf.Clamp01((hitS - raw) / 0.07f) : 0f;
+            SetTap(v, t.lane, FadeAt(s) * missFade * (1f - 0.45f * overdue), t.state == TileState.Missed ? 1f : 0f, t.state == TileState.Missed, overdue);
         }
 
-        void SetTap(TapView v, int lane, float fade, float hit, bool missed = false)
+        void SetTap(TapView v, int lane, float fade, float hit, bool missed = false, float overdue = 0f)
         {
             v.r.GetPropertyBlock(mpb);
-            mpb.SetColor(IdColor, missed ? new Color(1f, 0.35f, 0.3f) : LaneColors[lane]);
+            mpb.SetColor(IdColor, missed ? new Color(0.62f, 0.56f, 0.54f) : Color.Lerp(LaneColors[lane], new Color(0.62f, 0.58f, 0.56f), overdue));   // 漏掉 = 灰（不刺眼的红）
             mpb.SetFloat(IdFade, fade);
             mpb.SetFloat(IdHit, hit);
             v.r.SetPropertyBlock(mpb);

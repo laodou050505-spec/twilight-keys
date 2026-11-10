@@ -29,7 +29,7 @@ namespace Twilight
         [Tooltip("盖内标题牌材质（中英两张贴图，按界面语言换）")] public Material titleMat;
         public Texture2D titleZhTex, titleEnTex;
         [Header("摆放")]
-        public float distance = 0.45f;   // 第三十八轮（用户：八音盒有点远）0.55 → 0.45
+        public float distance = 0.55f;   // 第三十九轮（用户：还是原来的位置，现在有点近）0.45 → 0.55
         public float below = 0.25f, recenterAngle = 25f, scale = 1.3f;   // 第三十二轮（用户：八音盒往上挪一点）：眼下 30 → 25 cm
         /// <summary>第三十二轮（用户：琴不能和弹出来的八音盒叠在一起）：盒底最低只能到这个世界高度（琴键顶面 + 间隙，会话摆好琴后每帧给）。</summary>
         [System.NonSerialized] public float minBottomY = float.NegativeInfinity;

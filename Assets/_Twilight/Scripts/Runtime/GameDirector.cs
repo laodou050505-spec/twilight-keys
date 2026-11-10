@@ -58,7 +58,7 @@ namespace Twilight
                 if (d.fx) d.fx.Judge(t.lane, j, combo);
                 if (d.reveal) d.reveal.OnHit(d.Game.ProgressValue);
             }
-            public override void PressLane(int lane, bool wrong) { if (wrong) d.laneFlash[lane] = Mathf.Max(d.laneFlash[lane], 0.35f); }
+            public override void PressLane(int lane, bool wrong) { if (wrong) { d.laneFlash[lane] = Mathf.Max(d.laneFlash[lane], 0.35f); if (d.fx) d.fx.Wrong(lane); } }
             public override void Missed(Tile t) { if (d.fx) d.fx.Miss(t.lane); }
             public override void Gain(int lane, int amount, bool tick) { if (d.scoreHud) d.scoreHud.Gain(lane, amount, tick); }
             public override void Fail(Tile t) { if (d.pianoAudio && Application.isPlaying) d.pianoAudio.PlayError(); }

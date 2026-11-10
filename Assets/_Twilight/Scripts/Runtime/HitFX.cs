@@ -32,7 +32,7 @@ namespace Twilight
         Transform head;
         float heat, surge, holdSpark;
         static readonly int IdHeat = Shader.PropertyToID("_TK_Heat"), IdSurge = Shader.PropertyToID("_TK_Surge");
-        static readonly Color CPerfect = new(1f, 0.88f, 0.6f), CGreat = new(0.96f, 0.94f, 0.9f), CGood = new(0.86f, 0.8f, 0.94f, 0.85f), CMiss = new(0.8f, 0.55f, 0.5f, 0.7f);
+        static readonly Color CPerfect = new(1f, 0.88f, 0.6f), CGreat = new(0.96f, 0.94f, 0.9f), CGood = new(0.86f, 0.8f, 0.94f, 0.85f), CMiss = new(0.7f, 0.4f, 0.36f, 0.95f);
         /// <summary>判定字：毛笔写的一个字 + 下面小号英文斜体。</summary>
         static readonly string[] JudgeZh = { "错过", "不错", "很好", "完美" }, JudgeEn = { "MISS", "GOOD", "GREAT", "PERFECT" };
 
@@ -266,7 +266,29 @@ namespace Twilight
             }
         }
 
-        public void Miss(int lane) => Show(lanes[0], 0, CMiss, LabelPos(lane), 0.0032f, 0.5f);
+        /// <summary>漏掉一块（第三十九轮，用户：漏了要有反馈）：“错过”字放大、多停一会儿，判定线那条轨道上冒一团灰尘，再加一声闷闷的“咚”。</summary>
+        public void Miss(int lane)
+        {
+            Show(lanes[0], 0, CMiss, LabelPos(lane), 0.0044f, 0.9f);
+            if (river) EmitAt(river.Point(hitS, lane, 0.006f), 10, new Color(0.55f, 0.5f, 0.48f), 0.6f);
+            Sfx(TKSfx.Miss, 0.55f);
+        }
+
+        /// <summary>敲错轨道 / 敲到空轨道：一点灰尘 + 轻轻的“嗒”。</summary>
+        public void Wrong(int lane)
+        {
+            if (river && lane >= 0) EmitAt(river.Point(hitS, lane, 0.006f), 4, new Color(0.6f, 0.56f, 0.54f), 0.4f);
+            Sfx(TKSfx.Wrong, 0.35f);
+        }
+
+        AudioSource sfx;
+        void Sfx(AudioClip c, float vol)
+        {
+            if (!Application.isPlaying || !c) return;
+            if (!sfx) { sfx = gameObject.AddComponent<AudioSource>(); sfx.playOnAwake = false; sfx.spatialBlend = 0.6f; sfx.dopplerLevel = 0f; }
+            if (river) sfx.transform.position = transform.position;
+            sfx.PlayOneShot(c, vol);
+        }
 
         /// <summary>长按按满：再溅一次。</summary>
         public void HoldDone(int lane)
@@ -281,7 +303,8 @@ namespace Twilight
         void Show(Label l, int pts, Color c, Vector3 pos, float size, float dur)
         {
             if (l == null) return;
-            l.tm.text = JudgeEn[pts]; l.en.text = TKLang.En ? "" : JudgeZh[pts];     // 英文界面不再叠中文小字 l.col = c; l.pos = pos; l.size = size; l.dur = dur; l.age = 0f; l.rise = 0.022f;
+            l.tm.text = JudgeEn[pts]; l.en.text = TKLang.En ? "" : JudgeZh[pts];     // 英文界面不再叠中文小字
+            l.col = c; l.pos = pos; l.size = size; l.dur = dur; l.age = 0f; l.rise = 0.022f;   // 第三十九轮：这行原来被拼进了上一行的注释里，判定字一出来就被关掉（完美 / 很好 / 错过都从没显示过）
             l.t.gameObject.SetActive(true);
             Animate(l, 0f);
         }

@@ -28,7 +28,7 @@ namespace Twilight
         public float lingerSeconds = 3f;     // 第二十六轮（用户）：8 → 1.5 → 3 秒；中间敲琴可以提前出结算
         [Tooltip("曲目顺序（空 = 曲库里全部，按类别、难度排）")] public string[] playlist;
 
-        enum State { Place, Menu, Intro, Tutorial, Play, Result }
+        enum State { Place, Menu, Arrange, Intro, Tutorial, Play, Result }
         State state = State.Place;
         public string StateName => state.ToString();
         int songIndex, lastTaps, arpIndex;
@@ -140,7 +140,17 @@ namespace Twilight
                         bool fromBox = box && box.StartPressed;
                         if (box) { songIndex = box.songIndex; box.StartPressed = false; box.Hide(); }
                         if (!placed || fromBox) AutoPlace();
-                        BeginIntro();
+                        if (!arranged) BeginArrange(); else BeginIntro();
+                    }
+                    break;
+                case State.Arrange:
+                    // 第三十九轮（用户：从封面到琴出来，先提示玩家调桌子的位置）
+                    Say(arrangeGrabbed ? SayArrangeDone : SayArrange);
+                    FollowPosture();
+                    {
+                        int over = tutorial ? tutorial.FingersOver() : 2;
+                        arrangeHover = over >= 2 && !grabbing ? arrangeHover + dt : Mathf.Max(0f, arrangeHover - dt * 0.5f);
+                        if (arrangeHover > (arrangeGrabbed ? 1.2f : 2.2f)) { arranged = true; Say(Bi.None); BeginIntro(); }
                     }
                     break;
                 case State.Intro:
@@ -287,7 +297,7 @@ namespace Twilight
                 if (director.river) director.river.hide = 0f;
                 if (director.beatTrack) director.beatTrack.Chime(0.35f);
                 // 第三十轮（用户：新手教学只需要出现一次）：一开始教就记成“学过了”——中途回主页、退出游戏，下次都不再教（设置里可以手动再打开）
-                if (tutorial && TKLang.Tutorial) { TKLang.Coached = false; tutorial.Begin(); state = State.Tutorial; TKLang.Tutorial = false; }
+                if (tutorial && TKLang.Tutorial) { TKLang.Coached = false; tutorial.Begin(); if (arranged) tutorial.SkipKnobs(); state = State.Tutorial; TKLang.Tutorial = false; }
                 else BeginSong();
             }
         }
@@ -542,7 +552,7 @@ namespace Twilight
             // 抓手圆钮：能调的时候出现；手（拇指食指中点）靠近哪颗，哪颗放大
             if (grabHandles)
             {
-                grabHandles.Shown = allowed; grabHandles.Held = grabbing; grabHandles.Beckon = tutorial && tutorial.AtKnobs;
+                grabHandles.Shown = allowed; grabHandles.Held = grabbing; grabHandles.Beckon = (tutorial && tutorial.AtKnobs) || (state == State.Arrange && !arrangeGrabbed);
                 for (int k = 0; k < 2; k++)
                 {
                     float dmin = 9f;
@@ -563,6 +573,7 @@ namespace Twilight
                     LockTable(hit - f * TableEdgeInset, f, rig.position.y + authoredTableY + 0.007f, true, "双手捏住摆放");
                     AutoPlace();
                     if (tutorial) tutorial.NotifyGrabbed();
+                    if (state == State.Arrange) { arrangeGrabbed = true; arrangeHover = 0f; }
                     if (box) box.AlignHint = Bi.None;
                     return;
                 }
@@ -664,6 +675,21 @@ namespace Twilight
                 if (veilR.gameObject.activeSelf != on) veilR.gameObject.SetActive(on);
                 if (on) veilMat.SetColor("_Color", new Color(0f, 0f, 0f, blink * blink * (3f - 2f * blink)));
             }
+        }
+
+        // ---------- 第三十九轮（用户：从封面到琴出来，先提示玩家调桌子的位置）：开局摆琴 ----------
+        bool arranged, arrangeGrabbed; float arrangeHover;
+        static readonly Bi SayArrange = new("先把琴摆好：双手各捏住琴两边的圆钮，拖到你的桌面上\n摆好了，就把双手放到琴键上方", "first, place the piano: pinch the two knobs beside it and drag it onto your table\nwhen it sits right, rest your hands over the keys");
+        static readonly Bi SayArrangeDone = new("摆好了！把双手放到琴键上方，就开始", "nice! rest your hands over the keys to begin");
+        /// <summary>琴出现后先停在“摆琴”：世界出来、光河还藏着，两颗圆钮招手。每次启动游戏的第一首有这一步。</summary>
+        void BeginArrange()
+        {
+            world.gameObject.SetActive(true);
+            if (box && box.Visible) box.Hide();
+            director.StopSong();
+            if (director.river) director.river.hide = 1f;
+            arrangeGrabbed = false; arrangeHover = 0f;
+            state = State.Arrange;
         }
 
         // ---------- 第三十三轮：对齐桌子 ----------
