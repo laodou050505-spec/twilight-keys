@@ -405,7 +405,7 @@ namespace Twilight
                 grade.characterSize = 0.0085f * s;
                 TKFont.Alpha(grade, new Color(1f, 0.93f, 0.7f), Mathf.Clamp01(st / 0.08f) * e);
                 gradePlus.characterSize = 0.0085f * 0.62f * s;
-                gradePlus.transform.localPosition = new Vector3(0.0085f * 3.7f * s, 0.0085f * 2.6f * s, 0f);
+                gradePlus.transform.localPosition = new Vector3(0.0085f * 3.0f * s, 0.0085f * 2.1f * s, 0f);   // 用户：加号别离 S 太远
                 TKFont.Alpha(gradePlus, new Color(1f, 0.93f, 0.7f), Mathf.Clamp01(st / 0.08f) * e);
             }
             else { TKFont.Alpha(grade, Color.white, 0f); TKFont.Alpha(gradePlus, Color.white, 0f); }
