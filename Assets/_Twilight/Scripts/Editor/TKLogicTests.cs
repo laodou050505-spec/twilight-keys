@@ -162,6 +162,20 @@ namespace Twilight.EditorTools
                 }
                 Check(taps == 0, $"手搭在桌上（抖动 ±2.5 mm）：误触 {taps} 次（应为 0）");
             }
+            // 8f. 第四十轮：慢而深的敲击（0.05 m/s 落 12 mm 到桌面，真机左手无名指 / 小指常见）也要认，6 下
+            {
+                var d = new TapDetector();
+                int taps = 0; float t = 0f;
+                void F(float y) { foreach (var e in d.Update(t, new[] { new V3?[] { null, null, null, new V3(-0.13f, y, 0f), null }, null })) if (!e.release) taps++; t += 1f / 72f; }
+                F(0.04f);
+                for (int k = 0; k < 6; k++)
+                {
+                    for (int i = 0; i < 18; i++) F(0.016f - 0.012f * i / 17f);        // 0.25 秒落 12 mm ≈ 0.05 m/s
+                    for (int i = 0; i < 6; i++) F(0.004f);
+                    for (int i = 0; i < 10; i++) F(0.004f + 0.012f * i / 9f);         // 抬回去
+                }
+                Check(taps == 6, $"慢而深的敲击（0.05 m/s）：认出 {taps} / 6 下");
+            }
             // 8e. 同一根手指换轨道：敲完只抬 3 mm、横着挪到隔两条的轨道再敲——也要认
             {
                 var d = new TapDetector();

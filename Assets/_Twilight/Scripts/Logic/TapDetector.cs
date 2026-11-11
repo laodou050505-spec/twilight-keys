@@ -48,6 +48,8 @@ namespace Twilight.Logic
         public float smoothTau = 0.025f;
         [UnityEngine.Tooltip("手指刚被追踪到（或丢了又找回）时，离接触面这么高就算“准备好了”，第一下就能敲")]
         public float armOnAcquire = 0.02f;
+        [UnityEngine.Tooltip("慢而深的敲击也认：速度只要到这个、落得够深（slowDrop）、落到桌面附近（slowTop 以内）")]
+        public float slowSpeed = 0.035f, slowDrop = 0.007f, slowTop = 0.025f;
     }
 
     /// <summary>指尖敲击检测。坐标 = 琴面坐标：原点在判定线中心、y 是高出接触面的米数，x 朝右，z 朝玩家。
@@ -158,7 +160,9 @@ namespace Twilight.Logic
                     s.sy = sy;
                     float drop = s.Recent(t, 0.15f) - sy;              // 最近 0.15 秒落了多少
                     Diagnose(s, side, f, p, t);
-                    if (s.armed && p.y < cfg.zoneTop && drop >= cfg.minDrop && s.vy >= cfg.minDownSpeed && t - s.lastTap >= cfg.refractory)
+                    // 第四十轮（真机日志：左手 48 次“太慢”被拒，落了 7~19 mm、确实碰到桌面，只是落得慢 0.04~0.06 m/s）：慢而深的也算
+                    bool quick = s.vy >= cfg.minDownSpeed || (s.vy >= cfg.slowSpeed && drop >= cfg.slowDrop && p.y < cfg.slowTop);
+                    if (s.armed && p.y < cfg.zoneTop && drop >= cfg.minDrop && quick && t - s.lastTap >= cfg.refractory)
                     {
                         s.armed = false; s.down = true; s.minY = p.y; s.minSy = sy; s.lane = -1; s.lastTap = t; s.fired = true; s.tapX = p.x;
                         int ln = LaneAt(p.x);

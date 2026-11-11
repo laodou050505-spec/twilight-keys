@@ -32,7 +32,7 @@ namespace Twilight
         Transform head;
         float heat, surge, holdSpark;
         static readonly int IdHeat = Shader.PropertyToID("_TK_Heat"), IdSurge = Shader.PropertyToID("_TK_Surge");
-        static readonly Color CPerfect = new(1f, 0.88f, 0.6f), CGreat = new(0.96f, 0.94f, 0.9f), CGood = new(0.86f, 0.8f, 0.94f, 0.85f), CMiss = new(0.7f, 0.4f, 0.36f, 0.95f);
+        static readonly Color CPerfect = new(1f, 0.88f, 0.6f), CGreat = new(0.62f, 0.9f, 1f), CGood = new(0.82f, 0.7f, 1f, 0.9f), CMiss = new(0.7f, 0.4f, 0.36f, 0.95f);
         /// <summary>判定字：毛笔写的一个字 + 下面小号英文斜体。</summary>
         static readonly string[] JudgeZh = { "错过", "不错", "很好", "完美" }, JudgeEn = { "MISS", "GOOD", "GREAT", "PERFECT" };
 
@@ -248,7 +248,7 @@ namespace Twilight
         {
             var c = j.pts == 3 ? CPerfect : j.pts == 2 ? CGreat : CGood;
             Show(lanes[0], j.pts, c, LabelPos(lane), j.pts == 3 ? 0.0046f : 0.0038f, 0.6f);
-            var lc = TileField.LaneColors[lane];
+            var lc = Color.Lerp(TileField.LaneColors[lane], TileField.JudgeColor(j.pts), 0.65f);   // 第四十轮：火花 / 光晕带上判定色
             Emit(lane, j.pts == 3 ? 18 : j.pts == 2 ? 10 : 4, lc);
             if (river)
             {

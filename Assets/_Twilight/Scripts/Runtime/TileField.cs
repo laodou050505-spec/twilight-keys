@@ -74,11 +74,13 @@ namespace Twilight
             {
                 var v = kv.Value;
                 if (v.hitAge < 0) continue;
-                v.hitAge += dt / 0.28f;
+                v.hitAge += dt / 0.36f;
                 float k = Mathf.Clamp01(v.hitAge);
+                int jp = kv.Key.judgePts;
                 v.go.transform.SetPositionAndRotation(v.hitPos + Vector3.up * 0.03f * k, v.hitRot);
-                v.go.transform.localScale = new Vector3(TileWidth / MeshWidth, 1f, 1f) * Scale(hitS) * (1f + 0.6f * k);
-                SetTap(v, kv.Key.lane, 1f - k, 1f);
+                v.go.transform.localScale = new Vector3(TileWidth / MeshWidth, 1f, 1f) * Scale(hitS) * (1f + (jp == 3 ? 0.8f : 0.5f) * k);
+                // 第四十轮（用户：音块要有颜色反馈，完美 / 错过要不一样）：敲中后音块整块染成判定色再散开
+                SetTap(v, kv.Key.lane, 1f - k * k, 1f, false, 0f, JudgeColor(jp));
                 if (v.hitAge >= 1f) dead.Add(kv.Key);
             }
             foreach (var t in dead) { Recycle(taps[t]); taps.Remove(t); }
@@ -115,10 +117,13 @@ namespace Twilight
             SetTap(v, t.lane, FadeAt(s) * missFade * (1f - 0.45f * overdue), t.state == TileState.Missed ? 1f : 0f, t.state == TileState.Missed, overdue);
         }
 
-        void SetTap(TapView v, int lane, float fade, float hit, bool missed = false, float overdue = 0f)
+        /// <summary>判定色（和判定字、光晕一致）：完美暖金、很好天青、不错淡紫；错过是灰。</summary>
+        public static Color JudgeColor(int pts) => pts == 3 ? new Color(1f, 0.8f, 0.32f) : pts == 2 ? new Color(0.5f, 0.88f, 1f) : pts == 1 ? new Color(0.78f, 0.64f, 1f) : new Color(0.62f, 0.56f, 0.54f);
+
+        void SetTap(TapView v, int lane, float fade, float hit, bool missed = false, float overdue = 0f, Color? tint = null)
         {
             v.r.GetPropertyBlock(mpb);
-            mpb.SetColor(IdColor, missed ? new Color(0.62f, 0.56f, 0.54f) : Color.Lerp(LaneColors[lane], new Color(0.62f, 0.58f, 0.56f), overdue));   // 漏掉 = 灰（不刺眼的红）
+            mpb.SetColor(IdColor, tint ?? (missed ? JudgeColor(-1) : Color.Lerp(LaneColors[lane], new Color(0.62f, 0.58f, 0.56f), overdue)));   // 漏掉 = 灰（不刺眼的红）
             mpb.SetFloat(IdFade, fade);
             mpb.SetFloat(IdHit, hit);
             v.r.SetPropertyBlock(mpb);

@@ -65,7 +65,8 @@ Shader "Twilight/GlassTile"
                 float3 cn = abs(c / (_Size.xyz * 0.5));
                 float rimTop = smoothstep(0.75, 0.95, max(cn.x, cn.y)) * step(0.3, N.y);
                 half3 col = frost * 0.6 + tint.rgb * core * _Core + fr * 0.8 + spec * L.color * 0.6 + rimTop * 0.9;
-                col *= 1 + hit * 2.2;
+                // 第四十轮（用户：完美 / 很好 / 错过要不同颜色）：原来乘 3.2 倍直接冲成白，颜色看不出来；改成染成判定色、适度提亮
+                col = lerp(col, tint.rgb * (1.5 + core * 1.3) + rimTop * 0.35 + fr * 0.3, hit * 0.85);
                 half a = saturate(0.5 + core * 0.4 + fr * 0.45 + rimTop * 0.4 + hit * 0.3) * fade;
                 return half4(col, a);
             }

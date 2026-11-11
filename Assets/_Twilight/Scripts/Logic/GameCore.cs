@@ -22,6 +22,8 @@ namespace Twilight.Logic
         public bool Accepts(int l) => l == lane || l == altLane;
         public bool loopEnd, hold;
         public TileState state;
+        /// <summary>敲中时的判定（3 完美、2 很好、1 不错；-1 没敲中）——音块按它变色。</summary>
+        public int judgePts = -1;
         /// <summary>长按：已经按住到第几拍（相对块起点，0..dur）。</summary>
         public float held;
         public bool holdBroken, holdDone;
@@ -338,6 +340,7 @@ namespace Twilight.Logic
         void HitTile(Tile t, Judge j)
         {
             bool inOrder = t == Next;
+            t.judgePts = j.pts;
             t.state = t.hold ? TileState.Holding : TileState.Hit;
             if (inOrder) { Cursor++; SkipDone(); }
             ev.PressLane(t.lane, false);

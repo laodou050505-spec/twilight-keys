@@ -92,6 +92,7 @@ namespace Twilight
             var vtable = world.Find("VirtualTable");
             if (vtable) vtable.SetParent(rig, true);
             BuildVeil();
+            if (hands) hands.Missed += OnNearMiss;
             // 第三十四轮：琴两端的抓手圆钮（双手各捏一颗拖动整架琴）
             if (director.keys && box) grabHandles = TKGrabHandles.Create(rig, director.keys.transform, box.rimMaterial, box.plateMaterial);
             if (!Application.isEditor || UnityEngine.XR.XRSettings.isDeviceActive)
@@ -218,7 +219,8 @@ namespace Twilight
                         else Say(SayPaused);
                     }
                     else if (box && box.Visible && box.ResumeMode && !box.Closing) box.Hide();     // 掌心朝上继续了：收起八音盒
-                    else if (game.State == GameState.Ready) Say(TKLang.Coached ? Bi.None : SayReady);     // 教学提示只在第一首里说
+                    else if (game.State == GameState.Ready) Say(TKLang.Coached ? Bi.None : SayReady);
+                    else if (CoachTip(game)) { }                                                        // 第四十轮：打得吃力时的温馨提示（每次启动最多两次）     // 教学提示只在第一首里说
                     else if (game.Master) Say(director.FollowStreak >= 3 ? new Bi($"跟上了 ×{director.FollowStreak}", $"in step ×{director.FollowStreak}") : Time.time - playAt < 6f && !masterHintDone ? SayMasterHint : Bi.None);
                     else if (game.WaitForTap && game.Waiting) Say(SayWait);
                     else if (!TKLang.Coached && HoldComing(game)) Say(SayHold);
@@ -675,6 +677,41 @@ namespace Twilight
                 if (veilR.gameObject.activeSelf != on) veilR.gameObject.SetActive(on);
                 if (on) veilMat.SetColor("_Color", new Color(0f, 0f, 0f, blink * blink * (3f - 2f * blink)));
             }
+        }
+
+        // ---------- 第四十轮（用户：评分低时温馨提示一两次，比如敲不到音块就把手抬高一点再落下）----------
+        readonly System.Collections.Generic.List<(float t, bool hit)> recentTiles = new();
+        readonly System.Collections.Generic.List<(float t, string why)> recentNear = new();
+        int seenHits, seenMiss, tipsShown; float tipUntil = -1f, lastTipAt = -99f; Bi tipNow = Bi.None;
+        void OnNearMiss(Twilight.Logic.NearMiss m) { if (state == State.Play) recentNear.Add((Time.time, m.reason)); }
+
+        /// <summary>最近 10 秒漏了 5 块以上、而且漏的比中的多：按“没认出来”的主要原因给一句提示，停 5 秒。每次启动最多两次、间隔 45 秒以上。返回 true = 这一帧在显示提示。</summary>
+        bool CoachTip(GameCore game)
+        {
+            if (Time.time < tipUntil) { Say(tipNow); return true; }
+            if (game.Master || game.WaitForTap || state != State.Play) return false;
+            float now = Time.time;
+            for (int i = seenHits; i < game.Hits; i++) recentTiles.Add((now, true));
+            for (int i = seenMiss; i < game.Missed; i++) recentTiles.Add((now, false));
+            seenHits = game.Hits; seenMiss = game.Missed;
+            recentTiles.RemoveAll(x => now - x.t > 10f); recentNear.RemoveAll(x => now - x.t > 10f);
+            if (tipsShown >= 2 || now - lastTipAt < 45f || now - playAt < 6f) return false;
+            int miss = 0, hit = 0; foreach (var x in recentTiles) if (x.hit) hit++; else miss++;
+            if (miss < 5 || miss <= hit) return false;
+            var cnt = new System.Collections.Generic.Dictionary<string, int>();
+            foreach (var x in recentNear) cnt[x.why] = cnt.TryGetValue(x.why, out int c) ? c + 1 : 1;
+            string top = null; int best = 0; foreach (var kv in cnt) if (kv.Value > best) { best = kv.Value; top = kv.Key; }
+            tipNow = top switch
+            {
+                "high" => new Bi("敲不到音块？指尖要真的落到桌面上\n抬起来，再干脆地敲到桌面", "missing tiles? let your fingertip really touch the table\nlift, then tap down onto it"),
+                "slow" => new Bi("敲不到音块？先把手抬高一点\n再快一点落下去，像敲门那样", "missing tiles? lift your hand a little higher\nthen drop it a bit faster, like knocking"),
+                "locked" => new Bi("敲不到音块？每敲一下，把手指抬起来一点\n再敲下一下", "missing tiles? after each tap, lift your finger a little\nbefore the next one"),
+                "zone" => new Bi("敲不到音块？在琴键正前方的桌面上敲\n音块落到哪条，就敲哪条", "missing tiles? tap the table right in front of the keys\nunder the lane the tile is in"),
+                _ => new Bi("敲不到音块？把手抬高一点再落下\n手放在眼前看得见的地方，追踪更准", "missing tiles? lift your hand higher before tapping\nkeep your hands where you can see them"),
+            };
+            tipsShown++; lastTipAt = now; tipUntil = now + 5f;
+            Debug.Log($"[TK] 温馨提示 #{tipsShown}（最近 10 秒漏 {miss} 中 {hit}，主要原因 {top ?? "无"}）");
+            Say(tipNow); return true;
         }
 
         // ---------- 第三十九轮（用户：从封面到琴出来，先提示玩家调桌子的位置）：开局摆琴 ----------
