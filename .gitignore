@@ -20,3 +20,7 @@
 # 开发过程截图
 /Docs/Shots/
 /Docs/Shots.meta
+
+# Python 缓存
+__pycache__/
+*.pyc
