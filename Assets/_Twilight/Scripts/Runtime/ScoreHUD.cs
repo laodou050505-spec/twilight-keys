@@ -41,6 +41,7 @@ namespace Twilight
         Transform scoreRoot, comboRoot, msgRoot, board;
         DotText scoreDots, comboDots, resultDots;
         TextMesh scoreLabel, comboLabel, multText, msgZh, msgEn;
+        TextMesh gradePlus;   // S+ 的“+”：单独一个小字，挂在 S 的右上角
         TextMesh grade, infoZh, infoEn, promptZh, promptEn, stats, scoreText;
         Vector3 infoEnAt, promptEnAt;
         int langVer = -1;
@@ -96,6 +97,7 @@ namespace Twilight
             }
             float front = -0.06f * boardHeight / 2f - 0.002f;
             grade = Text(board, "Grade", gradeMat, 0.0085f, TKFont.Round, new Vector3(0, boardHeight * 0.575f, front));
+            gradePlus = Text(grade.transform, "GradePlus", gradeMat, 0.0085f * 0.6f, TKFont.Round, Vector3.zero);
             // 第十四轮（用户：结算面板的字不要出到面板外面）：分数、歌名、统计排在徽章下面，提示排在徽章上面，
             // 每行都按叶子在那个高度的宽度自动缩小（Fit），萤火虫也不再满天飞
             infoZh = Text(board, "InfoZh", boardZh, 0.0034f, TKFont.Kai, new Vector3(0, boardHeight * 0.262f, front));
@@ -148,13 +150,14 @@ namespace Twilight
         public void ShowResult(GameResult r, string songId)
         {
             result = r; resAge = 0f; gradeLanded = false; countT = 0f;
-            grade.text = r.grade ?? "";
+            grade.text = r.grade == "S+" ? "S" : r.grade ?? "";
+            gradePlus.text = r.grade == "S+" ? "+" : "";   // 第四十二轮：S+ 的加号小一号、挂在 S 的右上角
             int acc = Mathf.RoundToInt(r.accuracy * 100);
             var song = SongLibrary.Find(songId);
             if (r.master)
             {
                 // 大师演奏：没有分数评级，只说跟弹了多少
-                grade.text = "";                                                // 不评级
+                grade.text = ""; gradePlus.text = "";                           // 不评级
                 int tot = r.hits + r.misses;
                 infoZh.text = TKLang.En ? "" : (song != null ? song.title : "");
                 infoEn.text = TKLang.En ? SongLibrary.EnglishTitle(songId) : "";
@@ -373,7 +376,7 @@ namespace Twilight
             board.localScale = Vector3.one * Mathf.Lerp(0.6f, 1f, e) * (result != null && resAge > 0f && resAge < 0.5f ? 1f + 0.04f * Mathf.Sin(resAge * 25f) * (0.5f - resAge) : 1f);
             resultDots.visible = e;
             resultDots.Update(dt);
-            if (result == null) { foreach (var t in new[] { grade, infoZh, infoEn, stats, scoreText, promptZh, promptEn }) TKFont.Alpha(t, t.color, 0f); return; }
+            if (result == null) { foreach (var t in new[] { grade, gradePlus, infoZh, infoEn, stats, scoreText, promptZh, promptEn }) TKFont.Alpha(t, t.color, 0f); return; }
 
             resAge += dt;
             // 分数：0.5 ~ 2.0 秒，萤火虫从 0 一路写到最终值（越到后面越慢），嗒嗒声越来越高
@@ -401,8 +404,11 @@ namespace Twilight
                 }
                 grade.characterSize = 0.0085f * s;
                 TKFont.Alpha(grade, new Color(1f, 0.93f, 0.7f), Mathf.Clamp01(st / 0.08f) * e);
+                gradePlus.characterSize = 0.0085f * 0.62f * s;
+                gradePlus.transform.localPosition = new Vector3(0.0085f * 3.7f * s, 0.0085f * 2.6f * s, 0f);
+                TKFont.Alpha(gradePlus, new Color(1f, 0.93f, 0.7f), Mathf.Clamp01(st / 0.08f) * e);
             }
-            else TKFont.Alpha(grade, Color.white, 0f);
+            else { TKFont.Alpha(grade, Color.white, 0f); TKFont.Alpha(gradePlus, Color.white, 0f); }
             TKFont.Alpha(infoZh, Cream, e * Mathf.Clamp01((resAge - 2.3f) / 0.4f));
             TKFont.Alpha(infoEn, Cream, e * Mathf.Clamp01((resAge - 2.3f) / 0.4f));
             TKFont.Alpha(stats, Warm, e * Mathf.Clamp01((resAge - 2.4f) / 0.4f));

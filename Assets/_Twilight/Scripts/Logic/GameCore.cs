@@ -48,7 +48,9 @@ namespace Twilight.Logic
         public int missedTiles;
         public float accuracy;
         public string grade;
-        public static string GradeOf(float acc) => acc >= 0.92f ? "S" : acc >= 0.8f ? "A" : acc >= 0.6f ? "B" : "C";
+        /// <summary>第四十二轮（用户：S 太难拿，加一个 S+ 当最高、S 放低一点，但随便弹完不能拿 S）：
+        /// S+ ≥ 95%（几乎全完美），S ≥ 86%（全是“很好”只有 67%，要六成以上完美才够），A ≥ 74%，B ≥ 58%。</summary>
+        public static string GradeOf(float acc) => acc >= 0.95f ? "S+" : acc >= 0.86f ? "S" : acc >= 0.74f ? "A" : acc >= 0.58f ? "B" : "C";
         public Dictionary<string, int> counts;
         public string songId;
     }

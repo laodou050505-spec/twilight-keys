@@ -274,7 +274,11 @@ namespace Twilight.EditorTools
                 g2.Start("t", 120, "C4 D4 E4 F4 G4 A4 B4 C5 D5 E5");
                 steps = 0;
                 while (c2.result == null && steps < 72 * 60) { g2.Update(1f / 72f); steps++; }
-                Check(c2.result != null && c2.result.grade == "S", $"全中：评级 {c2.result?.grade}，准确率 {c2.result?.accuracy:P0}");
+                Check(c2.result != null && c2.result.grade == "S+", $"全中：评级 {c2.result?.grade}，准确率 {c2.result?.accuracy:P0}");
+                // 第四十二轮：评级档位——全“很好”是 B，七成完美三成很好是 S，一半完美一半很好是 A，98% 是 S+
+                string G(float a) => GameResult.GradeOf(a);
+                Check(G(2f / 3f) == "B" && G((0.7f * 3 + 0.3f * 2) / 3f) == "S" && G(0.5f + 0.5f * 2f / 3f) == "A" && G(0.98f) == "S+",
+                    $"评级档位：全很好 {G(2f / 3f)}、七成完美 {G((0.7f * 3 + 0.3f * 2) / 3f)}、五成完美 {G(0.5f + 0.5f * 2f / 3f)}、98% {G(0.98f)}");
             }
             sb.Insert(0, fail == 0 ? "全部通过\n" : $"失败 {fail} 项\n");
             Debug.Log(sb.ToString());
