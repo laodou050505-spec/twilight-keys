@@ -111,7 +111,20 @@ namespace Twilight.Logic
             // 第二十三轮（用户：长按别太松——手已经拿开了还显示按着）：
             // 只有“按下的那根手指追踪丢了”（不在列表里）时才找替补：同一只手的别的手指贴着琴面（2 cm 内）、横向还在这条轨道里（左右各放宽 0.25 条）。
             // 那根手指还在追踪、只是抬起来 / 移开了，就是真的松手，不找替补。
-            if (!heldFinger.TryGetValue(lane, out var key) || fingers.ContainsKey(key)) return false;
+            if (!heldFinger.TryGetValue(lane, out var key)) return false;
+            // 第四十三轮（用户：中间两条长按难按）：触发的那根手指抬起来了，但同一只手别的手指正按在这条轨道上（贴着桌面 1.5 cm 内、横向在轨道里）也算按着；
+            // 手整个拿开就会抬高 / 离开轨道，照样松开（第二十三轮的“手拿开了还算按着”不会回来）
+            if (fingers.ContainsKey(key))
+            {
+                float h0 = cfg.lanes * cfg.laneW / 2f, lx0 = -h0 + lane * cfg.laneW, lx1 = lx0 + cfg.laneW;
+                foreach (var kv in fingers)
+                {
+                    var s = kv.Value;
+                    if (kv.Key.Item2 == Finger.Thumb || kv.Key.Item1 != key.Item1) continue;
+                    if (s.y <= 0.015f && s.x >= lx0 - cfg.laneW * 0.15f && s.x <= lx1 + cfg.laneW * 0.15f) return true;
+                }
+                return false;
+            }
             float half = cfg.lanes * cfg.laneW / 2f;
             float x0 = -half + lane * cfg.laneW - cfg.laneW * 0.25f, x1 = x0 + cfg.laneW * 1.5f;
             foreach (var kv in fingers)
@@ -135,7 +148,7 @@ namespace Twilight.Logic
             {
                 var side = (Side)si;
                 var hand = tips[si];
-                TapEvent? pick = null; float pickY = 0;
+                TapEvent? pick = null; float pickY = 0, pickDrop = 0, pickV = 0;
                 multiList.Clear();
                 foreach (var f in All)
                 {
@@ -172,7 +185,7 @@ namespace Twilight.Logic
                             if (ln >= 0) heldFinger[ln] = (side, f);
                             s.lane = cand.lane;
                             if (multi) multiList.Add(cand);
-                            else if (pick == null || Better(cand, p.y, pick.Value, pickY)) { pick = cand; pickY = p.y; }
+                            else if (pick == null || Better(cand, drop, s.vy, pick.Value, pickDrop, pickV)) { pick = cand; pickY = p.y; pickDrop = drop; pickV = s.vy; }
                         }
                     }
                     if (s.down || !s.armed)
@@ -247,11 +260,15 @@ namespace Twilight.Logic
             Offset += (want - Offset) * 0.3f;
         }
 
-        static bool Better(TapEvent a, float ay, TapEvent b, float by)
+        /// <summary>同一只手同一帧几根手指一起落：第四十三轮（用户：中间两条长按难按、左手按左边第二条难认；真机“敲错轨道”一首 17~24 次）——
+        /// 原来选“最低”的那根，旁边跟着落下、位置更低的手指常被选中 → 算到隔壁轨道、长按记错手指一抬就断。
+        /// 现在选“这一下落得最多”的那根（真正在敲的手指），落得差不多（1.5 mm 内）再比速度。</summary>
+        static bool Better(TapEvent a, float aDrop, float aV, TapEvent b, float bDrop, float bV)
         {
             bool at = a.finger == Finger.Thumb, bt = b.finger == Finger.Thumb;
             if (at != bt) return bt;
-            return ay < by;
+            if (Math.Abs(aDrop - bDrop) > 0.0015f) return aDrop > bDrop;
+            return aV > bV;
         }
 
         /// <summary>延迟校准：每次敲击离最近节拍的偏差，去掉前 skip 下，取中位数（移植 latencyFromTaps）。</summary>

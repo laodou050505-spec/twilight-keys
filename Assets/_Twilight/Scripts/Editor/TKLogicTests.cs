@@ -208,6 +208,28 @@ namespace Twilight.EditorTools
                 }
                 Check(taps == 6, $"慢而深的敲击（0.05 m/s）：认出 {taps} / 6 下");
             }
+            // 8g. 第四十三轮：食指敲轨道 1，旁边中指（轨道 2 那边）跟着落、位置还更低，但落得少 → 要算食指那条轨道
+            {
+                var d = new TapDetector();
+                var lanes = new List<int>(); float t = 0f;
+                void F(float yi, float ym) { foreach (var e in d.Update(t, new[] { null, new V3?[] { null, new V3(-0.04f, yi, 0f), new V3(0.01f, ym, 0f), null, null } })) if (!e.release) lanes.Add(e.lane); t += 1f / 72f; }
+                for (int i = 0; i <= 8; i++) F(0.04f, 0.012f);                                    // 食指抬高，中指本来就低
+                for (int i = 0; i <= 8; i++) F(Mathf.Lerp(0.04f, 0.006f, i / 8f), Mathf.Lerp(0.012f, 0.002f, i / 8f));   // 一起落：食指落 34 mm，中指落 10 mm 但更低
+                Check(lanes.Count == 1 && lanes[0] == 1, $"食指敲、旁边手指跟着落得更低：算到轨道 {string.Join(",", lanes)}（应为 1）");
+            }
+            // 8h. 第四十三轮：长按中触发的手指抬起，但同一只手另一根手指还按在这条轨道上 → 仍按着；手整个抬起 → 松开
+            {
+                var d = new TapDetector();
+                float t = 0f; int lane = -1;
+                void F(float y0, float y1) { foreach (var e in d.Update(t, new[] { null, new V3?[] { null, new V3(0.03f, y0, 0f), new V3(0.05f, y1, 0f), null, null } })) if (!e.release && lane < 0) lane = e.lane; t += 1f / 72f; }
+                for (int i = 0; i <= 6; i++) F(0.05f, 0.05f);
+                for (int i = 0; i <= 6; i++) F(Mathf.Lerp(0.05f, 0.004f, i / 6f), Mathf.Lerp(0.05f, 0.03f, i / 6f));   // 食指敲下（轨道 2）
+                for (int i = 0; i <= 6; i++) F(0.004f, Mathf.Lerp(0.03f, 0.005f, i / 6f));                           // 中指也按到同一条轨道上
+                for (int i = 0; i <= 8; i++) F(Mathf.Lerp(0.004f, 0.04f, i / 8f), 0.005f);                            // 食指抬起，中指还按着
+                bool stillHeld = d.IsLaneHeld(lane);
+                for (int i = 0; i <= 8; i++) F(0.06f, Mathf.Lerp(0.005f, 0.05f, i / 8f));                            // 整只手抬起
+                Check(lane == 2 && stillHeld && !d.IsLaneHeld(lane), $"长按换手指接着按：轨道 {lane}，换指后按着 {stillHeld}，整手抬起后 {d.IsLaneHeld(lane)}");
+            }
             // 8e. 同一根手指换轨道：敲完只抬 3 mm、横着挪到隔两条的轨道再敲——也要认
             {
                 var d = new TapDetector();
