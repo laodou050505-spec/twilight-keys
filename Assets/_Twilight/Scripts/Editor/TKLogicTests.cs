@@ -68,6 +68,38 @@ namespace Twilight.EditorTools
                 g2.Tap(t2[2].lane); g2.Tap(t2[1].lane);
                 Check(t2[1].lane != t2[2].lane && g2.Hits == 3 && c2.misses == 0, $"几乎同时的两块先敲后一块：敲中 {g2.Hits} / 3，断连击 {c2.misses}");
             }
+            // 2c. 第四十一轮（用户：音块一密就有敲不到的）：同一条轨道连着几块，漏了前一块、对准后一块敲 → 算后一块，前一块记漏（不往前错位）
+            {
+                var c = new Catcher();
+                var g = new GameCore(c) { Lenient = true, IsHeld = _ => true, AutoLag = false };
+                g.Start("t", 120, "C4:1 E4:0.5 E4:0.5 E4:0.5 E4:0.5 C4:2");
+                var tl = new List<Tile>(g.Tiles);
+                g.Tap(tl[0].lane);
+                while ((g.Beat - tl[2].beat) / g.Bps < 0f) g.Update(1f / 72f);      // 不敲 tl[1]，到 tl[2] 的时刻
+                g.Tap(tl[2].lane);
+                while ((g.Beat - tl[3].beat) / g.Bps < 0f) g.Update(1f / 72f);
+                g.Tap(tl[3].lane);
+                Check(tl[1].lane == tl[2].lane && tl[1].state == TileState.Missed && tl[2].judgePts == 3 && tl[3].judgePts == 3,
+                    $"同轨道漏一块后对准下一块敲：前一块 {tl[1].state}，后两块判定 {tl[2].judgePts} / {tl[3].judgePts}（应为漏 / 3 / 3）");
+            }
+            // 2d. 第四十一轮：每下都晚 0.12 秒（真机追踪延迟），十几下后延迟补偿收敛、判成完美
+            {
+                var c = new Catcher();
+                var g = new GameCore(c) { Lenient = true, IsHeld = _ => true };
+                var sc = new StringBuilder(); for (int i = 0; i < 30; i++) sc.Append(i % 2 == 0 ? "C4 " : "G4 ");
+                g.Start("t", 100, sc.ToString().Trim());
+                var tl = new List<Tile>(g.Tiles);
+                g.Tap(g.Next.lane);
+                int last3 = 0;
+                for (int i = 1; i < 24 && g.Next != null; i++)
+                {
+                    var n = g.Next;
+                    while ((g.Beat - n.beat) / g.Bps < 0.12f) g.Update(1f / 72f);
+                    g.Tap(n.lane);
+                    if (i >= 20 && n.judgePts == 3) last3++;
+                }
+                Check(g.InputLag > 0.09f && g.InputLag < 0.14f && last3 >= 3, $"一直晚 0.12 秒：延迟补偿收敛到 {g.InputLag * 1000f:F0} ms，最后 4 下完美 {last3}");
+            }
             // 3. 长按一直按着：完整
             {
                 var c = new Catcher();

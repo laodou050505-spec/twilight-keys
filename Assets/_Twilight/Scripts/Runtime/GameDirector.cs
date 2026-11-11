@@ -85,7 +85,7 @@ namespace Twilight
                     if (d.fx) d.fx.Miss(lane);
                 }
             }
-            public override void End(GameResult r) { d.LastResult = r; if (d.reveal) d.reveal.Finale(); Debug.Log($"结束：{(r.win ? "完成" : "失败")} 评级 {r.grade} 准确率 {r.accuracy:P0} 分 {r.score} 最大连击 {r.maxCombo} 漏 {r.missedTiles} 长按 {r.holdsDone}/{r.holds} 敲击 {d.TapCount}"); }
+            public override void End(GameResult r) { d.LastResult = r; if (d.reveal) d.reveal.Finale(); Debug.Log($"结束：{(r.win ? "完成" : "失败")} 评级 {r.grade} 准确率 {r.accuracy:P0} 分 {r.score} 最大连击 {r.maxCombo} 漏 {r.missedTiles} 长按 {r.holdsDone}/{r.holds} 敲击 {d.TapCount}｜{d.songId} 敲错轨道 {d.Game.WrongTaps} 敲早 {d.Game.EarlyTaps} 改判后一块 {d.Game.Retargets} 敲击偏差中位 {d.Game.MedianRawDt * 1000f:F0} ms 延迟补偿 {d.Game.InputLag * 1000f:F0} ms"); }
         }
 
         void Start() { if (playOnStart && Application.isPlaying) StartSong(songId); }

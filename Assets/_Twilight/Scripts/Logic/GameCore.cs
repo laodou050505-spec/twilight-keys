@@ -139,6 +139,14 @@ namespace Twilight.Logic
         /// <summary>这一首漏掉的块数（宽松模式）。</summary>
         public int Missed => missedTiles;
         public float InputLag;          // 输入延迟补偿（秒）
+        /// <summary>第四十一轮：根据实际敲击的平均偏差自动校准 InputLag（宽松模式，0 ~ MaxAutoLag）。</summary>
+        public bool AutoLag = true;
+        public const float MaxAutoLag = 0.15f;
+        readonly List<float> hitRaw = new();
+        /// <summary>本首统计（日志用）：敲错轨道、敲早、改判给更近的后一块的次数。</summary>
+        public int WrongTaps, EarlyTaps, Retargets;
+        public float MedianRawDt => hitRaw.Count == 0 ? 0f : Median(hitRaw);
+        static float Median(List<float> l) { var c = new List<float>(l); c.Sort(); return c[c.Count / 2]; }
         public float ResumeLead;        // 继续时让下一块至少隔这么多拍
         /// <summary>长按的“是否还按着”由输入层提供：lane → 这条轨道上触发长按的那根手指 / 那个键是否还按着。</summary>
         public Func<int, bool> IsHeld;
@@ -169,6 +177,7 @@ namespace Twilight.Logic
             speeds = songSpeeds ?? DefaultSpeeds;
             Cursor = 0; Beat = -0.2f; Mul = targetMul = speeds[0];
             LoopIndex = 0; genBeat = 0; genLoop = 0; genIndex = 0; lastLane = -1; rewindTo = null;
+            WrongTaps = EarlyTaps = Retargets = 0; hitRaw.Clear();
             ScoreValue = 0; ComboValue = 0; MaxCombo = 0; stars = 0; Hits = 0; misses = 0; bonus = 0; holds = 0; holdsDone = 0; missedTiles = 0; earned = 0;
             counts.Clear(); counts["PERFECT"] = 0; counts["GREAT"] = 0; counts["GOOD"] = 0;
             autoUsed = Auto || Master; holding = null; FollowHits = 0; FollowWrong = 0; FailTile = null; finishTimer = -1f; ProgressValue = 0;
@@ -289,7 +298,10 @@ namespace Twilight.Logic
             }
             if (next.Accepts(lane))
             {
-                if (dt < -Early) { ev.PressLane(lane, dt > -Early - 0.5f); return; }   // 第三十九轮：早了一点（音块还在半路）也给一声轻“嗒”，不扣连击
+                if (dt < -Early) { EarlyTaps++; ev.PressLane(lane, dt > -Early - 0.5f); return; }   // 第三十九轮：早了一点（音块还在半路）也给一声轻“嗒”，不扣连击
+                // 第四十一轮（用户：音块一密就有敲不到的）：同一条轨道连着几块时，这一下离后面那块更近，就算后面那块（前面过时的记漏），
+                // 不再把敲后一块的手算给前一块（否则一路往前错一位，最后一块没人敲）
+                if (Lenient && !WaitForTap && dt > 0.06f && TryHitCloser(lane, dt)) return;
                 HitTile(next, Judge.Of(Math.Abs(dt)));
             }
             else if (holding != null && holding.Accepts(lane))
@@ -299,6 +311,7 @@ namespace Twilight.Logic
             else if (Lenient && !WaitForTap && TryHitAhead(lane)) { }
             else if (dt >= -WrongWin)
             {
+                WrongTaps++;
                 ev.PressLane(lane, true);
                 if (Lenient) BreakCombo(); else FailAt(next, true);
             }
@@ -308,6 +321,24 @@ namespace Twilight.Logic
         /// <summary>第三十八轮（用户：音块多、手换到别的轨道按时没反应）：宽松模式下不死守顺序——
         /// 敲的轨道和下一块对不上时，往后看 4 块，找这条轨道上正好到时间的那块：
         /// 它前面已经过了时间、又和它隔得开（> 0.25 秒）的块记漏（玩家明显跳过了）；和它几乎同时到的块不动，先算敲中的这块。</summary>
+        /// <summary>下一块敲晚了（dt &gt; 0），后面 4 块里同轨道有一块离现在更近：敲那块，中间已经过时的记漏。</summary>
+        bool TryHitCloser(int lane, float dt)
+        {
+            for (int k = Cursor + 1; k < Math.Min(Tiles.Count, Cursor + 5); k++)
+            {
+                var t2 = Tiles[k];
+                if (t2.state != TileState.Pending || !t2.Accepts(lane)) continue;
+                float dt2 = (Beat - t2.beat) / Bps - InputLag;
+                if (dt2 < -Early) return false;
+                if (Math.Abs(dt2) >= dt) return false;                              // 不比前一块近：还是算前一块
+                while (Next != null && Next != t2 && (Beat - Next.beat) / Bps - InputLag > 0f) MissTile(Next);
+                Retargets++;
+                HitTile(t2, Judge.Of(Math.Abs(dt2)));
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>游标跳过已经先敲中的块（TryHitAhead 原地标记的）。</summary>
         void SkipDone() { while (Cursor < Tiles.Count && Tiles[Cursor].state != TileState.Pending) Cursor++; }
 
@@ -341,6 +372,13 @@ namespace Twilight.Logic
         {
             bool inOrder = t == Next;
             t.judgePts = j.pts;
+            // 第四十一轮：自动校准输入延迟——最近 15 下敲中的“实际偏差”取中位数，慢慢挪过去
+            if (Lenient && AutoLag && !WaitForTap && !Master && State == GameState.Playing)
+            {
+                float raw = (Beat - t.beat) / Bps;
+                if (raw > -0.3f && raw < 0.4f) { hitRaw.Add(raw); if (hitRaw.Count > 15) hitRaw.RemoveAt(0); }
+                if (hitRaw.Count >= 6) InputLag = Math.Max(0f, Math.Min(MaxAutoLag, InputLag + (Median(hitRaw) - InputLag) * 0.25f));
+            }
             t.state = t.hold ? TileState.Holding : TileState.Hit;
             if (inOrder) { Cursor++; SkipDone(); }
             ev.PressLane(t.lane, false);
