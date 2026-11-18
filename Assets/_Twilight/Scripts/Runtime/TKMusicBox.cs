@@ -26,6 +26,7 @@ namespace Twilight
         [Tooltip("舞台光（盒下、盒里、小岛背后），随开盖亮起")] public MeshRenderer[] glows;
         public Material glowMaterial, letterMaterial, fireflyMaterial;
         [Tooltip("盒盖上方提示牌：象牙瓷面 + 金边")] public Material plateMaterial, rimMaterial;
+        [Tooltip("开始画面的公司署名：官方 TRIPO 标志（Twilight/BrandLogo，原样显示）")] public Material logoMaterial;
         [Tooltip("盖内标题牌材质（中英两张贴图，按界面语言换）")] public Material titleMat;
         public Texture2D titleZhTex, titleEnTex;
         [Header("摆放")]
@@ -186,6 +187,7 @@ namespace Twilight
                 zh = Text("HintZh", root, brushInk, 0.0022f, TKFont.Brush, HintAt, tilt),
                 en = Text("HintEn", root, roundInk, 0.0019f, TKFont.Round, HintAt, tilt),
             };
+            BuildCredit(brushInk, roundInk);
             hintPlate = HintPart("HintPlate", plateMaterial, 0.004f, tilt);
             hintRim = HintPart("HintRim", rimMaterial ? rimMaterial : plateMaterial, 0.0058f, tilt);
             bar = new DotText("Progress", root, fireflyMaterial, BarDots + 6, false, Firefly, FireflyB, 0.004f, 0.006f, 17) { roam = new Vector2(0.12f, 0.02f), idle = 0 };
@@ -291,6 +293,150 @@ namespace Twilight
     static readonly Bi SayLocked = new("先跟着教学弹完这首\n学完就能自己选歌了", "finish this tutorial song first\nthen pick any song you like");
     float nudgeUntil = -1f;
     void Nudge() { nudgeUntil = Time.time + 2.6f; hintShake = 0.35f; }
+
+    // ---------- 第四十四轮（用户：开始画面加公司署名）----------
+    // 第四十五轮（用户：位置放到八音盒底座那一圈）：嵌在底座鎏金浮雕带正面正中的一块小铭牌（象牙瓷面 + 金边 + 深褐字，和盒盖上方的提示牌同一套），
+    // 牌面顺着底座的弧面弯（浮雕带是超椭圆、往上收 25°，正好朝着玩家的视线），像盒子出厂就带的出品铭牌：
+    // 官方 TRIPO 标志在前（原图，不改色、不拉伸、不加效果），后面一行字——中文“Tripo XR 出品”、英文“Tripo XR Developers”，跟着界面语言换。
+    // 只在开始画面出现（暂停菜单、设置、曲目面板打开时收起）；比标题、按钮都小，不挡任何东西。
+    static readonly Bi CreditText = new("Tripo XR 出品", "Tripo XR Developers");
+    // 底座浮雕带（建模脚本 blender_musicbox.py 的 plinth：高 8~21 mm，中线 14.5 mm 处截面是 A·0.9502 × B·0.9502 的超椭圆，n = 2.4）
+    const float BandA = 0.13f * 0.9502f, BandB = 0.095f * 0.9502f, BandN = 2.4f, BandTilt = 25f;
+    static readonly Vector3 CreditAt = new(0f, 0.0145f, -BandB);          // Body 本地：浮雕带正面正中、贴在表面上
+    const float LogoH = 0.0086f, LogoAspect = 800f / 200f, LogoInk = 692f / 800f, LogoMarkH = 134f / 200f;   // 标志图 800×200，其中有墨的部分 692×134（四周是官方留白）
+    const float CreditGap = 0.0048f, CreditPadX = 0.0068f, CreditPadY = 0.0030f;
+    static readonly Color CreditPlateColor = new(0.87f, 0.815f, 0.74f);   // 实测：这样渲染出来和盒身瓷面（约 213,188,162）一致
+    Transform creditRoot, creditPlate, creditRim, creditLogo;
+    Line creditLine; Material creditLogoMat; string creditSized; float creditShow;
+
+    /// <summary>铭牌本地坐标里，横向偏 x 处底座表面往后退了多少：返回（沿牌面往上的滑移，垂直牌面往里的深度）。</summary>
+    static Vector2 BandWarp(float x)
+    {
+        float u = Mathf.Min(0.98f, Mathf.Abs(x) / BandA);
+        float d = BandB * (1f - Mathf.Pow(1f - Mathf.Pow(u, BandN), 1f / BandN));     // 水平方向往后退的距离
+        return new Vector2(d * Mathf.Sin(BandTilt * Mathf.Deg2Rad), d * Mathf.Cos(BandTilt * Mathf.Deg2Rad));
+    }
+
+    /// <summary>顺着底座弧面弯的胶囊形薄板：正面在 z = 0（朝 −Z = 朝玩家），厚 depth；两头半圆，上下沿带侧壁。</summary>
+    static Mesh CurvedPill(float w, float h, float depth)
+    {
+        float r = h / 2f, straight = Mathf.Max(0f, w / 2f - r);
+        var xs = new List<(float x, float hh)>();
+        const int cap = 10, mid = 28;
+        for (int k = 0; k < cap; k++) { float a = k / (float)cap * Mathf.PI * 0.5f; xs.Add((-straight - r * Mathf.Cos(a), r * Mathf.Sin(a))); }
+        for (int k = 0; k <= mid; k++) xs.Add((Mathf.Lerp(-straight, straight, k / (float)mid), r));
+        for (int k = cap - 1; k >= 0; k--) { float a = k / (float)cap * Mathf.PI * 0.5f; xs.Add((straight + r * Mathf.Cos(a), r * Mathf.Sin(a))); }
+        var v = new List<Vector3>(); var t = new List<int>();
+        foreach (var (x, hh) in xs)
+        {
+            var o = BandWarp(x);
+            v.Add(new Vector3(x, -hh + o.x, o.y)); v.Add(new Vector3(x, hh + o.x, o.y));                    // 0 1 正面：下、上
+            v.Add(new Vector3(x, hh + o.x, o.y)); v.Add(new Vector3(x, hh + o.x, o.y + depth));             // 2 3 上侧壁：前、后
+            v.Add(new Vector3(x, -hh + o.x, o.y)); v.Add(new Vector3(x, -hh + o.x, o.y + depth));           // 4 5 下侧壁：前、后
+        }
+        for (int i = 0; i < xs.Count - 1; i++)
+        {
+            int a = i * 6, b = a + 6;
+            t.AddRange(new[] { a, a + 1, b + 1, a, b + 1, b });                 // 正面
+            t.AddRange(new[] { a + 2, a + 3, b + 3, a + 2, b + 3, b + 2 });     // 上侧壁
+            t.AddRange(new[] { a + 4, b + 5, a + 5, a + 4, b + 4, b + 5 });     // 下侧壁
+        }
+        var m = new Mesh { name = "CreditPill" };
+        m.SetVertices(v); m.SetTriangles(t, 0); m.RecalculateNormals(); m.RecalculateBounds();
+        return m;
+    }
+
+    void BuildCredit(Material zhInk, Material enInk)
+    {
+        if (!body || !logoMaterial) return;
+        creditRoot = new GameObject("Credit").transform;
+        creditRoot.SetParent(body, false);
+        creditRoot.localPosition = CreditAt; creditRoot.localRotation = Quaternion.Euler(BandTilt, 0f, 0f);   // 牌面跟着浮雕带往后仰
+        creditLine = new Line
+        {
+            zh = TKFont.Text("CreditZh", creditRoot, zhInk, 0.00086f, TKFont.Brush, TextAnchor.MiddleLeft),
+            en = TKFont.Text("CreditEn", creditRoot, enInk, 0.00066f, TKFont.Round, TextAnchor.MiddleLeft),
+        };
+        creditLine.Set(CreditText);
+        Transform Part(string n, Material m)
+        {
+            var g = new GameObject(n);
+            g.transform.SetParent(creditRoot, false);
+            g.AddComponent<MeshFilter>();
+            var r = g.AddComponent<MeshRenderer>(); r.sharedMaterial = m;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; r.receiveShadows = false;
+            return g.transform;
+        }
+        // 第四十五轮（用户：颜色别太亮，要和八音盒主体一个颜色）：瓷面调成盒身瓷面的颜色（牌面朝上受光多，底色要比盒身的再压一点才看起来一样），
+        // 金边用盒子自己的那种金（Box_Gold），不用提示牌那种亮金
+        Material boxGold = null;
+        foreach (var r in body.GetComponentsInChildren<MeshRenderer>(true)) foreach (var m in r.sharedMaterials) if (m && m.name == "Box_Gold") boxGold = m;
+        var plateMat = new Material(plateMaterial) { name = "Credit 瓷牌" };
+        plateMat.SetColor("_Color", CreditPlateColor); plateMat.SetFloat("_Gloss", 0.26f); plateMat.SetFloat("_Rim", 0.03f); plateMat.SetFloat("_NoAO", 1f);
+        var rimMat = new Material(boxGold ? boxGold : (rimMaterial ? rimMaterial : plateMaterial)) { name = "Credit 金边" };
+        if (rimMat.HasProperty("_NoAO")) rimMat.SetFloat("_NoAO", 1f);
+        creditRim = Part("CreditRim", rimMat);
+        creditPlate = Part("CreditPlate", plateMat);
+        creditLogoMat = new Material(logoMaterial);
+        creditLogo = Part("CreditLogo", creditLogoMat);
+        creditRoot.gameObject.SetActive(false);
+    }
+
+    /// <summary>按当前语言那行字的实际宽度排版：[标志] 间隔 [文字] 整体居中，瓷牌四周留边；标志和文字都贴着弯曲的牌面。</summary>
+    void SizeCredit()
+    {
+        var t = TKLang.En ? creditLine.en : creditLine.zh;
+        t.transform.localRotation = Quaternion.identity;
+        var b = t.GetComponent<MeshRenderer>().localBounds;
+        float inkW = LogoH * LogoAspect * LogoInk, markH = LogoH * LogoMarkH;
+        float group = inkW + CreditGap + b.size.x;
+        float x0 = -group / 2f;
+        float w = group + CreditPadX * 2f, h = Mathf.Max(markH, b.size.y) + CreditPadY * 2f;
+        // 瓷牌比底座表面高出 1.6 mm，金边再大一圈、矮 0.7 mm
+        creditPlate.GetComponent<MeshFilter>().sharedMesh = CurvedPill(w, h, 0.0016f);
+        creditPlate.localPosition = new Vector3(0, 0, -0.0016f);
+        creditRim.GetComponent<MeshFilter>().sharedMesh = CurvedPill(w + 0.0022f, h + 0.0022f, 0.0016f);
+        creditRim.localPosition = new Vector3(0, 0, -0.0009f);
+        // 标志：原图 4:1 的平面（不拉伸），横向分 16 段，每段跟着牌面的弧度走
+        float lw = LogoH * LogoAspect, lx = x0 + inkW / 2f;
+        var lv = new List<Vector3>(); var lu = new List<Vector2>(); var lt = new List<int>();
+        const int cols = 16;
+        for (int k = 0; k <= cols; k++)
+        {
+            float u = k / (float)cols, x = lx + (u - 0.5f) * lw;
+            var o = BandWarp(x);
+            lv.Add(new Vector3(x, -LogoH / 2f + o.x, o.y)); lv.Add(new Vector3(x, LogoH / 2f + o.x, o.y));
+            lu.Add(new Vector2(u, 0)); lu.Add(new Vector2(u, 1));
+            if (k < cols) { int a = k * 2; lt.AddRange(new[] { a, a + 1, a + 3, a, a + 3, a + 2 }); }
+        }
+        var lm = new Mesh { name = "CreditLogo" };
+        lm.SetVertices(lv); lm.SetUVs(0, lu); lm.SetTriangles(lt, 0); lm.RecalculateBounds();
+        creditLogo.GetComponent<MeshFilter>().sharedMesh = lm;
+        creditLogo.localPosition = new Vector3(0, 0, -0.0024f);
+        // 文字：整行转到它中点处牌面的切线方向（弧度很小，约 3°），中点贴在牌面上、竖直方向和标志的中线对齐
+        float xc = x0 + inkW + CreditGap + b.size.x / 2f;
+        Vector2 oc = BandWarp(xc), o1 = BandWarp(xc + 0.002f), o0 = BandWarp(xc - 0.002f);
+        var rot = Quaternion.Euler(0f, -Mathf.Atan2(o1.y - o0.y, 0.004f) * Mathf.Rad2Deg, 0f);
+        var at = new Vector3(xc, oc.x, oc.y - 0.0027f) - rot * new Vector3(b.center.x, b.center.y, 0f);
+        foreach (var tm in new[] { creditLine.zh, creditLine.en }) { tm.transform.localRotation = rot; tm.transform.localPosition = at; }
+    }
+
+    void UpdateCredit(float dt, float textA)
+    {
+        if (!creditRoot) return;
+        bool want = !ResumeMode && !settings && !PanelOpen && (phase == Phase.Open || phase == Phase.Opening);
+        creditShow = Mathf.MoveTowards(creditShow, want ? textA : 0f, dt * 3f);
+        bool vis = creditShow > 0.01f;
+        if (creditRoot.gameObject.activeSelf != vis) creditRoot.gameObject.SetActive(vis);
+        if (!vis) return;
+        string cur = TKLang.En ? CreditText.en : CreditText.zh;
+        if (cur != creditSized) { creditSized = cur; SizeCredit(); }
+        float e = creditShow * creditShow * (3f - 2f * creditShow);
+        foreach (var pt in new[] { creditPlate, creditRim }) { var sc = pt.localScale; sc.x = Mathf.Max(0.01f, e); pt.localScale = sc; }
+        float a = Mathf.Clamp01(creditShow * 1.5f - 0.4f);
+        creditLine.Alpha(HintInk, a);
+        creditLogoMat.SetFloat("_Alpha", a);
+    }
 
     Transform hintPlate, hintRim; string hintSized; float hintShow;
     static readonly Color HintInk = new(0.2f, 0.11f, 0.05f);
@@ -514,6 +660,7 @@ namespace Twilight
             hintLine.Alpha(HintInk, Mathf.Clamp01(hintShow * 1.5f - 0.4f));
             float he = hintShow * hintShow * (3f - 2f * hintShow);
             foreach (var pt in new[] { hintPlate, hintRim }) if (pt) { pt.gameObject.SetActive(he > 0.01f); var psc = pt.localScale; psc.x = Mathf.Max(0.01f, he); pt.localScale = psc; }
+            UpdateCredit(dt, textA);
 
             // 按钮：手指靠近先弹出一点，按下去再弹回来（本地 +Z 朝外）
             for (int i = 0; i < buttons.Length; i++)

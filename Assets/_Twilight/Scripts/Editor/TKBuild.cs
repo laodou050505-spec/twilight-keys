@@ -59,6 +59,37 @@ namespace Twilight.EditorTools
             return $"图标已设置（安卓 {n} 个尺寸）";
         }
 
+        /// <summary>启动画面（11-17 用户：去掉 Made with Unity，换成排版一样的 MADE WITH + TRIPO 标志）。
+        /// 仍然用 Unity 自带的启动画面（位置、大小、淡入淡出都是同一套），只是关掉 Unity 标志、换成现成的那张图（Art/Brand/made_with_tripo.png，透明底）。
+        /// 头显（XR）里 Unity 不画“标志列表”，只认 Virtual Reality Splash Image 这一张贴图，所以两处都要填（头显那张是不透明深色底、内容居中）。
+        /// 写法照 MonsterCity 的 MonsterBuild.ApplySplash；每次打包都会调用。图不在就什么都不改。</summary>
+        public static string ApplySplash()
+        {
+            const string path = "Assets/_Twilight/Art/Brand/made_with_tripo.png";
+            var ti = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (ti == null) { Debug.LogWarning("[TK] 没找到启动画面图 " + path + "，启动画面保持原样"); return "没找到 " + path; }
+            if (ti.textureType != TextureImporterType.Sprite || ti.mipmapEnabled || ti.textureCompression != TextureImporterCompression.Uncompressed)
+            { ti.textureType = TextureImporterType.Sprite; ti.spriteImportMode = SpriteImportMode.Single; ti.mipmapEnabled = false; ti.textureCompression = TextureImporterCompression.Uncompressed; ti.alphaIsTransparency = true; ti.SaveAndReimport(); }
+            var sp = AssetDatabase.LoadAssetAtPath<Sprite>(path);
+            if (!sp) { Debug.LogWarning("[TK] 启动画面图导入失败 " + path); return "导入失败 " + path; }
+            PlayerSettings.SplashScreen.show = true;
+            PlayerSettings.SplashScreen.showUnityLogo = false;
+            PlayerSettings.SplashScreen.logos = new[] { PlayerSettings.SplashScreenLogo.Create(2f, sp) };
+            const string vrPath = "Assets/_Twilight/Art/Brand/made_with_tripo_vr.png";
+            var vi = AssetImporter.GetAtPath(vrPath) as TextureImporter;
+            if (vi == null) { Debug.LogWarning("[TK] 没找到头显启动图 " + vrPath); return "没找到 " + vrPath; }
+            if (vi.textureType != TextureImporterType.Default || vi.mipmapEnabled || vi.textureCompression != TextureImporterCompression.Uncompressed || vi.npotScale != TextureImporterNPOTScale.None)
+            { vi.textureType = TextureImporterType.Default; vi.mipmapEnabled = false; vi.textureCompression = TextureImporterCompression.Uncompressed; vi.npotScale = TextureImporterNPOTScale.None; vi.wrapMode = TextureWrapMode.Clamp; vi.sRGBTexture = true; vi.SaveAndReimport(); }
+            var vt = AssetDatabase.LoadAssetAtPath<Texture2D>(vrPath);
+            var all = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset");
+            if (!vt || all == null || all.Length == 0) { Debug.LogWarning("[TK] 头显启动图没设上"); return "头显启动图没设上"; }
+            var so = new SerializedObject(all[0]); var prop = so.FindProperty("m_VirtualRealitySplashScreen");
+            if (prop == null) { Debug.LogWarning("[TK] 这个版本的 Unity 没有 m_VirtualRealitySplashScreen"); return "没有 m_VirtualRealitySplashScreen"; }
+            if (prop.objectReferenceValue != vt) { prop.objectReferenceValue = vt; so.ApplyModifiedPropertiesWithoutUndo(); }
+            AssetDatabase.SaveAssets();
+            return $"启动画面：显示 {PlayerSettings.SplashScreen.show}，Unity 标志 {PlayerSettings.SplashScreen.showUnityLogo}，标志列表 {PlayerSettings.SplashScreen.logos.Length} 张（{sp.name}），头显启动图 {(prop.objectReferenceValue ? prop.objectReferenceValue.name : "空")}";
+        }
+
         [MenuItem("Twilight/打包 APK（PICO）")]
         public static string BuildApk()
         {
@@ -69,6 +100,7 @@ namespace Twilight.EditorTools
             }
             EnsurePico();
             SetIcon();
+            ApplySplash();
             // 先从头重建场景并保存：保证打进去的是干净的场景（巡检截图时临时改过的东西不会带进包里），
             // 也避免打包时弹“场景已修改，要保存吗”的框把编辑器卡住
             TKSceneBuilder.Build();

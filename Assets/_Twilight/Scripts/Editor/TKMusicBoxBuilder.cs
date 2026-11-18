@@ -64,6 +64,18 @@ namespace Twilight.EditorTools
             box.titleMat = AssetDatabase.LoadAssetAtPath<Material>($"{TKArt.MatDir}/Box_TitleArt.mat");
             box.plateMaterial = AssetDatabase.LoadAssetAtPath<Material>($"{TKArt.MatDir}/Box_PanelIvory.mat");   // 盒盖上方提示瓷牌
             box.rimMaterial = AssetDatabase.LoadAssetAtPath<Material>($"{TKArt.MatDir}/Box_PanelGold.mat");
+            {   // 第四十四轮（用户：开始画面加公司署名）：官方 TRIPO 标志（黑字版，用在象牙瓷牌上），原样显示——专用的不受光材质，不改色
+                const string lp = "Assets/_Twilight/Art/Brand/tripo_logo_h_800_black.png";
+                if (AssetImporter.GetAtPath(lp) is TextureImporter li && (li.textureType != TextureImporterType.Default || !li.mipmapEnabled || li.npotScale != TextureImporterNPOTScale.None || li.textureCompression != TextureImporterCompression.Uncompressed || li.wrapMode != TextureWrapMode.Clamp || !li.alphaIsTransparency || li.anisoLevel < 8))
+                { li.textureType = TextureImporterType.Default; li.mipmapEnabled = true; li.npotScale = TextureImporterNPOTScale.None; li.textureCompression = TextureImporterCompression.Uncompressed; li.wrapMode = TextureWrapMode.Clamp; li.alphaIsTransparency = true; li.sRGBTexture = true; li.filterMode = FilterMode.Trilinear; li.anisoLevel = 8; li.SaveAndReimport(); }
+                string lmp = $"{TKArt.MatDir}/Box_BrandLogo.mat";
+                var lm = AssetDatabase.LoadAssetAtPath<Material>(lmp);
+                if (!lm) { lm = new Material(Shader.Find("Twilight/BrandLogo")); AssetDatabase.CreateAsset(lm, lmp); }
+                lm.shader = Shader.Find("Twilight/BrandLogo");
+                lm.mainTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(lp);
+                EditorUtility.SetDirty(lm);
+                box.logoMaterial = lm;
+            }
             box.titleZhTex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{Dir}/Tex/title_zh.png");
             box.titleEnTex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{Dir}/Tex/title_en.png");
             foreach (var n in new[] { "Spindle", "Drum", "BtnSettings" }) if (!mt.Find(n)) Debug.LogWarning($"[TK] 八音盒模型里找不到 {n}");
